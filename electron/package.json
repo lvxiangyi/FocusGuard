@@ -1,6 +1,6 @@
 {
   "name": "focusguard-agent",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "AI学習監督アシスタント",
   "main": "main.js",
   "scripts": {
@@ -31,8 +31,22 @@
     "win": {
       "signAndEditExecutable": false,
       "target": [
-        "portable"
-      ]
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "FocusGuard-Agent-${version}-${env.RELEASE_DATE}-x64-setup.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "FocusGuard Agent"
     }
   },
   "dependencies": {

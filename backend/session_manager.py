@@ -69,6 +69,7 @@ class SessionManager:
         self.recovery_actions: list = []
         self.first_check_delay_seconds: float = 0
         self._finalized: bool = False
+        self._paused_at: Optional[float] = None
 
     def start_session(
         self,
@@ -97,6 +98,8 @@ class SessionManager:
         if trigger_threshold is not None and trigger_threshold <= 0:
             raise ValueError("Trigger threshold must be greater than 0.")
 
+        self._cancel_guardian_mode_state()
+
         if self.active:
             self.stop_session(status="replaced")
 
@@ -123,11 +126,21 @@ class SessionManager:
         self.recovery_actions = []
         self.first_check_delay_seconds = max(0, float(first_check_delay_seconds or 0))
         self._finalized = False
+        self._paused_at = None
 
         # Start background monitoring loop
         self._loop_task = asyncio.create_task(self._monitor_loop())
 
         return self.session_id
+
+    def _cancel_guardian_mode_state(self):
+        try:
+            from guardian_manager import guardian_manager
+
+            guardian_manager.cancel_break()
+            guardian_manager.cancel_entertainment(commit_elapsed=True)
+        except Exception as e:
+            print(f"[session] Could not cancel guardian state before session start: {e}")
 
     def stop_session(self, status: str = "stopped", notify: bool = False, stop_reason: Optional[str] = None):
         """Stop the current session."""
@@ -149,6 +162,7 @@ class SessionManager:
 
         self.active = False
         self.should_block = False
+        self._paused_at = None
 
         actual_start = datetime.fromtimestamp(self.start_time).isoformat() if self.start_time else None
         actual_end = datetime.now().isoformat()
@@ -253,11 +267,35 @@ class SessionManager:
 
         return result
 
+    def _sync_overlay_pause(self) -> bool:
+        """Freeze remaining time while the quiz/review overlay is showing.
+
+        Answering (and the new review screen) can take longer than the leftover
+        session time. If we keep counting, the session finalizes, Electron drops
+        the running status panel, and 回到工作 looks like it killed the session.
+        """
+        showing = bool(self.should_block)
+        if not showing:
+            try:
+                showing = bool(blocker.is_showing)
+            except Exception:
+                showing = False
+        if showing:
+            if self._paused_at is None:
+                self._paused_at = time.time()
+            return True
+        if self._paused_at is not None:
+            self.start_time = (self.start_time or time.time()) + (time.time() - self._paused_at)
+            self._paused_at = None
+        return False
+
     def get_remaining_seconds(self) -> int:
         """Get remaining time in seconds."""
         if not self.active or not self.start_time:
             return 0
         elapsed = time.time() - self.start_time
+        if self._paused_at is not None:
+            elapsed -= time.time() - self._paused_at
         total = self.duration_minutes * 60
         remaining = max(0, total - elapsed)
         return int(remaining)
@@ -348,6 +386,10 @@ class SessionManager:
             if self.first_check_delay_seconds > 0:
                 await asyncio.sleep(self.first_check_delay_seconds)
             while self.active:
+                if self._sync_overlay_pause():
+                    await asyncio.sleep(1)
+                    continue
+
                 # Check if session time is up
                 if self.get_remaining_seconds() <= 0:
                     print(f"[session] Session {self.session_id} time is up. Stopping.")
@@ -386,6 +428,9 @@ class SessionManager:
                             )
                         except Exception as e:
                             print(f"[session] Blocker show error (non-fatal): {e}")
+                    # Freeze remaining time immediately; do not sleep the full
+                    # check interval while the user is answering.
+                    self._sync_overlay_pause()
 
                 # Create log entry
                 log_entry = {
@@ -416,7 +461,11 @@ class SessionManager:
                     f"activity={result.get('current_activity')}"
                 )
 
-                # Wait for next interval
+                # Wait for next interval. If the overlay is up, skip the long
+                # sleep so remaining time stays frozen instead of draining.
+                if self._sync_overlay_pause():
+                    await asyncio.sleep(1)
+                    continue
                 await asyncio.sleep(self.check_interval_seconds)
 
         except asyncio.CancelledError:

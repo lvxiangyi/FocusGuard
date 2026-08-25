@@ -9,10 +9,12 @@ import json
 import random
 import uuid
 import re
+from datetime import datetime
+from pathlib import Path
 from openai import OpenAI
 from dotenv import load_dotenv
-from data_paths import ENV_FILE, LOGS_DIR, PROJECT_ROOT
-from settings_manager import get_selected_model
+from data_paths import ENV_FILE, LOGS_DIR, PRACTICE_ATTEMPTS_FILE, PRACTICE_DIR, PRACTICE_STATE_FILE, PROJECT_ROOT
+from settings_manager import get_practice_source_path, get_practice_target_language, get_selected_model, save_settings
 
 load_dotenv(dotenv_path=ENV_FILE)
 
@@ -46,23 +48,27 @@ Important:
 - Everything must be in Japanese
 """
 
-TRANSLATION_GRADE_PROMPT = """You are grading a short English-to-Japanese translation task.
+TRANSLATION_GRADE_PROMPT = """You are grading a short translation task.
 
-English source:
+Source text:
 "{source_text}"
 
-User's Japanese translation, written in Japanese script or romanized Japanese:
+Target language:
+"{target_language}"
+
+User's translation:
 "{user_answer}"
 
-Grade whether the user's translation preserves the main meaning in natural or acceptable Japanese.
-Be fair about minor grammar/spelling issues and accept clear romaji Japanese if the meaning is correct.
-Reject answers that are empty, unrelated, copied English, or miss the core meaning.
+Grade whether the user's translation preserves the main meaning in natural or acceptable {target_language}.
+Be fair about minor grammar/spelling issues. Reject answers that are empty, unrelated, copied source text, or miss the core meaning.
 
 Return JSON only:
 {{
   "accepted": true or false,
   "score": number between 0 and 1,
-  "feedback": "short feedback in Japanese"
+  "feedback": "one short sentence",
+  "model_translation": "a concise reference translation in {target_language}",
+  "explanation": "1-2 sentences: key phrase, why it is accepted or rejected"
 }}
 """
 
@@ -202,18 +208,26 @@ def _fallback_quiz(task: str) -> dict:
 
 
 def _load_practice_challenges() -> list:
-    if not PRACTICE_FILE.exists():
+    source_path = _selected_practice_path()
+    if not source_path.exists():
         return []
     try:
-        lines = PRACTICE_FILE.read_text(encoding="utf-8").splitlines()
+        lines = source_path.read_text(encoding="utf-8").splitlines()
     except Exception as e:
         print(f"[quiz_generator] Could not read practice file: {e}")
         return []
 
-    challenges = []
+    numbered_challenges = []
+    fallback_challenges = []
     in_details = False
+    in_code = False
     for line in lines:
         stripped = line.strip()
+        if stripped.startswith("```"):
+            in_code = not in_code
+            continue
+        if in_code:
+            continue
         if stripped.lower().startswith("<details"):
             in_details = True
             continue
@@ -222,15 +236,25 @@ def _load_practice_challenges() -> list:
             continue
         if in_details:
             continue
-        match = re.match(r"^\d+\.\s+(.+?)\s*$", stripped)
-        if not match:
+        sentence = ""
+        numbered = re.match(r"^\d+[\.)]\s+(.+?)\s*$", stripped)
+        bullet = re.match(r"^[-*]\s+(.+?)\s*$", stripped)
+        if numbered:
+            sentence = numbered.group(1).strip()
+        elif bullet:
+            sentence = bullet.group(1).strip()
+        elif stripped and not stripped.startswith("#") and len(stripped) <= 300:
+            sentence = stripped
+        if not sentence:
             continue
-        sentence = match.group(1).strip().rstrip()
         sentence = re.sub(r"\s{2,}$", "", sentence).strip()
-        if len(sentence) < 8 or not re.search(r"[A-Za-z]", sentence):
+        if len(sentence) < 4:
             continue
-        challenges.append(sentence)
-    return challenges
+        if numbered:
+            numbered_challenges.append(sentence)
+        else:
+            fallback_challenges.append(sentence)
+    return numbered_challenges or fallback_challenges
 
 
 def _translation_challenge_bank() -> list:
@@ -239,14 +263,97 @@ def _translation_challenge_bank() -> list:
 
 
 def generate_translation_challenge() -> dict:
-    """Generate a simple English-to-Japanese strict-mode unlock challenge."""
+    """Generate the next strict-mode translation unlock challenge."""
+    source_path = _selected_practice_path()
+    target_language = get_practice_target_language()
     bank = _translation_challenge_bank()
+    is_fallback = bank == TRANSLATION_CHALLENGES
+    item_index = _next_practice_index(str(source_path), len(bank)) if not is_fallback else random.randrange(len(bank))
+    source_text = bank[item_index]
     return {
         "challenge_id": str(uuid.uuid4())[:8],
-        "source_text": random.choice(bank),
-        "instruction": "Translate this English sentence into Japanese. Romaji is accepted if IME is unavailable.",
-        "source": "0718_Practice.md" if bank != TRANSLATION_CHALLENGES else "built-in",
+        "source_text": source_text,
+        "instruction": f"Translate this sentence into {target_language}.",
+        "source": str(source_path) if not is_fallback else "built-in",
+        "source_name": source_path.name if not is_fallback else "built-in",
+        "item_index": item_index,
+        "item_total": len(bank),
+        "target_language": target_language,
     }
+
+
+def save_practice_source_file(filename: str, content: str) -> dict:
+    """Save an uploaded markdown/text practice file and select it."""
+    original_name = Path(filename or "practice.md").name
+    suffix = Path(original_name).suffix.lower()
+    if suffix not in {".md", ".txt"}:
+        raise ValueError("Practice source must be a Markdown or text file.")
+    if len(content or "") > 2_000_000:
+        raise ValueError("Practice source file is too large.")
+    safe_stem = re.sub(r"[^A-Za-z0-9_.-]+", "_", Path(original_name).stem).strip("._") or "practice"
+    target = PRACTICE_DIR / f"{safe_stem}-{uuid.uuid4().hex[:8]}{suffix}"
+    target.write_text(content or "", encoding="utf-8")
+    settings = save_settings({"practice_source_path": str(target)})
+    count = len(_load_practice_challenges())
+    return {
+        "status": "saved",
+        "path": str(target),
+        "name": target.name,
+        "item_count": count,
+        "settings": settings,
+    }
+
+
+def get_practice_status() -> dict:
+    source_path = _selected_practice_path()
+    challenges = _load_practice_challenges()
+    state = _load_practice_state()
+    cursor = int(state.get("sources", {}).get(str(source_path), {}).get("cursor", 0))
+    return {
+        "source_path": str(source_path),
+        "source_name": source_path.name,
+        "target_language": get_practice_target_language(),
+        "item_count": len(challenges),
+        "next_index": cursor % len(challenges) if challenges else 0,
+        "attempts_path": str(PRACTICE_ATTEMPTS_FILE),
+    }
+
+
+def _selected_practice_path() -> Path:
+    value = get_practice_source_path()
+    return Path(value).expanduser()
+
+
+def _load_practice_state() -> dict:
+    if PRACTICE_STATE_FILE.exists():
+        try:
+            with open(PRACTICE_STATE_FILE, "r", encoding="utf-8") as f:
+                state = json.load(f)
+            if isinstance(state, dict):
+                state.setdefault("sources", {})
+                return state
+        except Exception as e:
+            print(f"[quiz_generator] Could not read practice state: {e}")
+    return {"sources": {}}
+
+
+def _save_practice_state(state: dict):
+    PRACTICE_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(PRACTICE_STATE_FILE, "w", encoding="utf-8") as f:
+        json.dump(state, f, ensure_ascii=False, indent=2)
+
+
+def _next_practice_index(source_key: str, total: int) -> int:
+    if total <= 0:
+        return 0
+    state = _load_practice_state()
+    source_state = state.setdefault("sources", {}).setdefault(source_key, {"cursor": 0})
+    cursor = int(source_state.get("cursor", 0))
+    index = cursor % total
+    source_state["cursor"] = cursor + 1
+    source_state["last_used_at"] = datetime.now().astimezone().isoformat()
+    _save_practice_state(state)
+    return index
 
 
 def _looks_like_japanese(value: str) -> bool:
@@ -316,3 +423,117 @@ def grade_translation_answer(source_text: str, user_answer: str) -> dict:
             "feedback": f"AI判定に失敗しました。もう一度試してください。({e})",
             "model": "api-error",
         }
+def record_translation_attempt(challenge: dict, user_answer: str, result: dict):
+    entry = {
+        "attempt_id": str(uuid.uuid4())[:8],
+        "timestamp": datetime.now().astimezone().isoformat(),
+        "challenge_id": challenge.get("challenge_id", ""),
+        "source_text": challenge.get("source_text", ""),
+        "user_answer": user_answer,
+        "accepted": bool(result.get("accepted", False)),
+        "score": result.get("score", 0),
+        "feedback": result.get("feedback", ""),
+        "source": challenge.get("source", ""),
+        "source_name": challenge.get("source_name", ""),
+        "item_index": challenge.get("item_index"),
+        "item_total": challenge.get("item_total"),
+        "target_language": challenge.get("target_language", get_practice_target_language()),
+        "model": result.get("model", ""),
+    }
+    PRACTICE_ATTEMPTS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(PRACTICE_ATTEMPTS_FILE, "a", encoding="utf-8") as f:
+        f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+
+def get_practice_attempts(limit: int = 200) -> list:
+    if not PRACTICE_ATTEMPTS_FILE.exists():
+        return []
+    try:
+        lines = PRACTICE_ATTEMPTS_FILE.read_text(encoding="utf-8").splitlines()
+    except Exception:
+        return []
+    attempts = []
+    for line in lines[-max(1, int(limit)):]:
+        try:
+            attempts.append(json.loads(line))
+        except Exception:
+            continue
+    return attempts
+
+
+def grade_translation_answer(
+    source_text: str,
+    user_answer: str,
+    target_language: str = None,
+    challenge: dict = None,
+) -> dict:
+    """Grade a translation answer with AI when available."""
+    answer = (user_answer or "").strip()
+    target_language = (target_language or get_practice_target_language()).strip() or "Japanese"
+    if not answer:
+        result = {"accepted": False, "score": 0, "feedback": "Please enter a translation.", "explanation": "Please enter a translation.", "model_translation": "", "model": "local"}
+        if challenge:
+            record_translation_attempt(challenge, answer, result)
+        return result
+
+    if not OPENROUTER_API_KEY or OPENROUTER_API_KEY == "your_api_key_here":
+        if target_language.lower() == "japanese":
+            accepted = (_looks_like_japanese(answer) and len(answer) >= 6) or _looks_like_romaji(answer, source_text)
+        else:
+            accepted = len(answer) >= 3 and answer.strip().lower() != (source_text or "").strip().lower()
+        result = {
+            "accepted": accepted,
+            "score": 0.7 if accepted else 0.2,
+            "feedback": "Accepted by local fallback." if accepted else f"Please enter a {target_language} translation.",
+            "model_translation": "",
+            "explanation": "Accepted by local fallback." if accepted else f"Please enter a {target_language} translation.",
+            "model": "local-fallback",
+        }
+        if challenge:
+            record_translation_attempt(challenge, answer, result)
+        return result
+
+    try:
+        client = OpenAI(api_key=OPENROUTER_API_KEY, base_url=OPENROUTER_BASE_URL)
+        model = get_selected_model()
+        print(f"[quiz_generator] Using model for translation grading: {model}")
+
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {
+                    "role": "user",
+                    "content": TRANSLATION_GRADE_PROMPT.format(
+                        source_text=source_text,
+                        target_language=target_language,
+                        user_answer=answer,
+                    ),
+                }
+            ],
+            max_tokens=350,
+        )
+
+        content = response.choices[0].message.content.strip()
+        if content.startswith("```"):
+            content = content.split("\n", 1)[1]
+            content = content.rsplit("```", 1)[0]
+
+        result = json.loads(content)
+        result["model"] = model
+        result.setdefault("model_translation", "")
+        result.setdefault("explanation", result.get("feedback", ""))
+        if challenge:
+            record_translation_attempt(challenge, answer, result)
+        return result
+
+    except Exception as e:
+        print(f"[quiz_generator] Translation grading error: {e}")
+        result = {
+            "accepted": False,
+            "score": 0,
+            "feedback": f"AI grading failed. Please try again. ({e})",
+            "model": "api-error",
+        }
+        if challenge:
+            record_translation_attempt(challenge, answer, result)
+        return result

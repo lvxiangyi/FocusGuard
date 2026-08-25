@@ -268,7 +268,7 @@ function postJson(pathname, payload) {
         });
         res.on('end', () => {
           if (res.statusCode >= 400) {
-            reject(new Error(data || `HTTP ${res.statusCode}`));
+            reject(new Error(httpErrorMessage(data, res.statusCode)));
             return;
           }
           try {
@@ -285,6 +285,22 @@ function postJson(pathname, payload) {
   });
 }
 
+function httpErrorMessage(data, statusCode) {
+  if (!data) return `HTTP ${statusCode}`;
+  try {
+    const parsed = JSON.parse(data);
+    const detail = parsed && parsed.detail;
+    if (typeof detail === 'string' && detail.trim()) return detail;
+    if (Array.isArray(detail)) {
+      return detail.map((item) => item.msg || JSON.stringify(item)).join('; ');
+    }
+    if (detail) return JSON.stringify(detail);
+  } catch (e) {
+    // Backend sometimes returns plain text.
+  }
+  return data;
+}
+
 function notify(title, body) {
   try {
     if (Notification.isSupported()) {
@@ -295,23 +311,68 @@ function notify(title, body) {
   }
 }
 
+function getJson(pathname) {
+  return new Promise((resolve, reject) => {
+    const req = http.get(
+      {
+        hostname: '127.0.0.1',
+        port: BACKEND_PORT,
+        path: pathname,
+      },
+      (res) => {
+        let data = '';
+        res.on('data', (chunk) => {
+          data += chunk;
+        });
+        res.on('end', () => {
+          if (res.statusCode >= 400) {
+            reject(new Error(httpErrorMessage(data, res.statusCode)));
+            return;
+          }
+          try {
+            resolve(JSON.parse(data || '{}'));
+          } catch (e) {
+            resolve({});
+          }
+        });
+      },
+    );
+    req.on('error', reject);
+  });
+}
+
+function refreshDatasetPending() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.webContents
+    .executeJavaScript("window.dispatchEvent(new CustomEvent('aimonitor-pending-capture'));")
+    .catch((e) => logWarn(`[dataset] Could not refresh Dataset pending: ${e}`));
+}
+
 function registerDatasetShortcuts() {
+  // Screenshot first. If a pending shot already exists, 1/2 only change 对/错.
+  // Do not steal focus — recapturing after focusing Dataset would poison train.
   const shortcuts = [
-    ['CommandOrControl+Alt+1', 'on_task'],
-    ['CommandOrControl+Alt+2', 'off_task'],
-    ['CommandOrControl+Alt+3', 'ambiguous'],
-    ['CommandOrControl+Alt+0', 'unlabeled'],
+    ['CommandOrControl+Alt+1', '对'],
+    ['CommandOrControl+Alt+2', '错'],
   ];
 
-  shortcuts.forEach(([accelerator, label]) => {
+  shortcuts.forEach(([accelerator, verdict]) => {
     const ok = globalShortcut.register(accelerator, async () => {
       try {
-        const result = await postJson('/dataset/capture', { label });
-        const sampleId = result && result.sample && result.sample.id ? result.sample.id : '';
-        notify('AIMonitor dataset', `Captured ${label}${sampleId ? ` (${sampleId.slice(0, 8)})` : ''}`);
+        const existing = await getJson('/personal-bench/pending-capture');
+        let result;
+        if (existing && existing.pending) {
+          result = await postJson('/personal-bench/pending-capture/verdict', { verdict });
+          notify('FocusGuard Data', `已标记：${verdict}（未重新截图，先到 Dataset 保存）`);
+        } else {
+          result = await postJson('/personal-bench/pending-capture', { verdict });
+          const pending = result && result.pending ? result.pending : {};
+          notify('FocusGuard Data', `已截图：${pending.verdict || verdict}。到 Dataset 填 context 后保存。`);
+        }
+        refreshDatasetPending();
       } catch (e) {
-        logError(`[dataset] Capture failed for ${label}:`, e);
-        notify('AIMonitor dataset capture failed', String(e.message || e));
+        logError(`[dataset] Hotkey capture failed for ${verdict}:`, e);
+        notify('FocusGuard 截图失败', String(e.message || e));
       }
     });
     if (!ok) {

@@ -60,6 +60,14 @@ export async function getStatus() {
   return api('/session/status');
 }
 
+export async function startGuardianEntertainment(minutes) {
+  return api('/guardian/entertainment/start', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ minutes }),
+  });
+}
+
 // Schedule APIs
 export async function getSchedules() {
   return api('/schedule/list');
@@ -131,6 +139,22 @@ export async function saveSettings(payload) {
   });
 }
 
+export async function getPracticeStatus() {
+  return api('/practice/status');
+}
+
+export async function uploadPracticeFile(filename, content) {
+  return api('/practice/upload', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ filename, content }),
+  });
+}
+
+export async function getPracticeAttempts(limit = 200) {
+  return api(`/practice/attempts?limit=${encodeURIComponent(limit)}`);
+}
+
 export async function getAiStatus() {
   return api('/ai/status');
 }
@@ -181,4 +205,91 @@ export function getDatasetImageUrl(sample) {
 export function getGuardianImageUrl(status) {
   if (!status?.latest_screenshot_url) return '';
   return `${API_BASE}${status.latest_screenshot_url}?t=${encodeURIComponent(status.last_checked_at || '')}`;
+}
+
+// Personal Bench APIs
+export async function getPersonalBenchRecent(limit = 10) {
+  return api(`/personal-bench/recent?limit=${encodeURIComponent(limit)}`);
+}
+
+export async function addPersonalBenchFromRecent(payload) {
+  return api('/personal-bench/samples/from-recent', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function getPersonalBenchRecentImageUrl(item) {
+  if (!item?.screenshot_path) return '';
+  return `${API_BASE}/personal-bench/recent-image?path=${encodeURIComponent(item.screenshot_path)}&t=${encodeURIComponent(item.captured_at || '')}`;
+}
+
+export function getPersonalBenchSampleImageUrl(sample) {
+  if (!sample?.id) return '';
+  return `${API_BASE}/personal-bench/samples/${encodeURIComponent(sample.id)}/image?t=${encodeURIComponent(sample.added_at || sample.captured_at || '')}`;
+}
+
+export async function getPersonalBenchSamples(split = '') {
+  const suffix = split ? `?split=${encodeURIComponent(split)}` : '';
+  return api(`/personal-bench/samples${suffix}`);
+}
+
+export async function getPersonalBenchCaptureContext() {
+  return api('/personal-bench/capture-context');
+}
+
+export async function savePersonalBenchCaptureContext(context) {
+  return api('/personal-bench/capture-context', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(context),
+  });
+}
+
+export async function getPersonalBenchPendingCapture() {
+  return api('/personal-bench/pending-capture');
+}
+
+export function getPersonalBenchPendingImageUrl(pending) {
+  if (!pending) return '';
+  return `${API_BASE}/personal-bench/pending-capture/image?t=${encodeURIComponent(pending.captured_at || Date.now())}`;
+}
+
+export async function takePersonalBenchPendingCapture(verdict = undefined) {
+  return api('/personal-bench/pending-capture', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(verdict ? { verdict } : {}),
+  });
+}
+
+export async function updatePersonalBenchPendingVerdict(verdict) {
+  return api('/personal-bench/pending-capture/verdict', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ verdict }),
+  });
+}
+
+export async function commitPersonalBenchPendingCapture(payload) {
+  return api('/personal-bench/pending-capture/commit', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload || {}),
+  });
+}
+
+export async function discardPersonalBenchPendingCapture() {
+  return api('/personal-bench/pending-capture', { method: 'DELETE' });
+}
+
+export async function movePersonalBenchSample(sampleId, split) {
+  return api(`/personal-bench/samples/${encodeURIComponent(sampleId)}/move?split=${encodeURIComponent(split)}`, {
+    method: 'POST',
+  });
+}
+
+export async function deletePersonalBenchSample(sampleId) {
+  return api(`/personal-bench/samples/${encodeURIComponent(sampleId)}`, { method: 'DELETE' });
 }

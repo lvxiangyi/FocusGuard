@@ -28,9 +28,12 @@ from dataset_store import (
 from quiz_generator import (
     generate_quiz,
     generate_translation_challenge,
+    get_practice_attempts,
+    get_practice_status,
     grade_translation_answer,
     record_wrong_answer,
     get_wrong_answers,
+    save_practice_source_file,
 )
 from settings_manager import (
     get_default_check_interval_seconds,
@@ -113,6 +116,10 @@ class SettingsRequest(BaseModel):
     whitelist_behaviors: Optional[List[str]] = None
     guardian_mode_enabled: Optional[bool] = None
     guardian_check_interval_seconds: Optional[int] = None
+    guardian_entertainment_daily_limit_minutes: Optional[int] = None
+    guardian_entertainment_day_start_time: Optional[str] = None
+    practice_source_path: Optional[str] = None
+    practice_target_language: Optional[str] = None
     dataset_tag_options: Optional[List[str]] = None
     dataset_retention_days: Optional[int] = None
 
@@ -161,6 +168,10 @@ class RecoveryWorkRequest(BaseModel):
 class RecoveryBreakRequest(BaseModel):
     break_minutes: int
     minimum_next_step: str
+
+
+class GuardianEntertainmentRequest(BaseModel):
+    minutes: int
 
 
 class DatasetCaptureRequest(BaseModel):
@@ -294,6 +305,15 @@ async def guardian_recovery_break(req: RecoveryBreakRequest):
     return {"status": "break_started", "break": payload}
 
 
+@app.post("/guardian/entertainment/start")
+async def guardian_entertainment_start(req: GuardianEntertainmentRequest):
+    try:
+        status = guardian_manager.start_entertainment(req.minutes)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"status": "started", "entertainment_status": status}
+
+
 # --- Flow Schedule APIs ---
 
 @app.post("/flow/continue")
@@ -392,6 +412,237 @@ async def api_guardian_latest_screenshot():
     if not os.path.exists(screenshot_path):
         raise HTTPException(status_code=404, detail="Guardian screenshot not found.")
     return FileResponse(screenshot_path, media_type="image/jpeg")
+
+
+# --- Personal Bench APIs ---
+
+class PersonalBenchAddRequest(BaseModel):
+    mode: str
+    human_label: str
+    screenshot_path: str
+    split: str = "train"
+    task: str = ""
+    supervision_level: Optional[str] = None
+    human_reason: str = ""
+    ai_activity: str = ""
+    ai_reason: str = ""
+    ai_label: str = ""
+    captured_at: Optional[str] = None
+    source: str = "manual"
+
+
+class PersonalBenchCaptureContextRequest(BaseModel):
+    mode: Optional[str] = None
+    task: Optional[str] = None
+    supervision_level: Optional[str] = None
+    activity: Optional[str] = None
+    note: Optional[str] = None
+    split: Optional[str] = None
+
+
+class PersonalBenchPendingCaptureRequest(BaseModel):
+    verdict: Optional[str] = None  # 对 / 错，可稍后在 Dataset 里改
+
+
+class PersonalBenchPendingCommitRequest(BaseModel):
+    verdict: Optional[str] = None
+    mode: Optional[str] = None
+    task: Optional[str] = None
+    supervision_level: Optional[str] = None
+    activity: Optional[str] = None
+    note: Optional[str] = None
+    split: Optional[str] = None
+
+
+def _personal_bench_store():
+    from personal_bench.store import BenchStore
+    return BenchStore()
+
+
+def _enrich_bench_sample(sample: dict) -> dict:
+    sample = dict(sample)
+    sample["screenshot_url"] = f"/personal-bench/samples/{sample['id']}/image"
+    hl = sample.get("human_label")
+    if hl in {"on_task", "allow"}:
+        sample["verdict"] = "对"
+    elif hl in {"off_task", "interrupt"}:
+        sample["verdict"] = "错"
+    else:
+        sample["verdict"] = hl
+    return sample
+
+
+@app.get("/personal-bench/recent")
+async def api_personal_bench_recent(limit: int = Query(default=10, ge=1, le=50)):
+    from personal_bench.recent import load_recent_judgments
+    return {"items": load_recent_judgments(limit=limit)}
+
+
+@app.get("/personal-bench/recent-image")
+async def api_personal_bench_recent_image(path: str):
+    from pathlib import Path
+    from data_paths import DATA_DIR
+
+    try:
+        resolved = Path(path).resolve()
+        data_root = Path(DATA_DIR).resolve()
+    except OSError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    if data_root not in resolved.parents and resolved != data_root:
+        raise HTTPException(status_code=403, detail="Path outside data root")
+    if not resolved.is_file():
+        raise HTTPException(status_code=404, detail="Image not found")
+    return FileResponse(str(resolved), media_type="image/jpeg")
+
+
+@app.get("/personal-bench/capture-context")
+async def api_get_capture_context():
+    from personal_bench.capture_context import load_capture_context
+    return {"context": load_capture_context()}
+
+
+@app.post("/personal-bench/capture-context")
+async def api_save_capture_context(req: PersonalBenchCaptureContextRequest):
+    from personal_bench.capture_context import save_capture_context
+    try:
+        context = save_capture_context(req.dict(exclude_unset=True))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return {"context": context}
+
+
+@app.get("/personal-bench/pending-capture")
+async def api_get_pending_capture():
+    from personal_bench.capture_context import load_pending_capture
+    return {"pending": load_pending_capture()}
+
+
+@app.get("/personal-bench/pending-capture/image")
+async def api_pending_capture_image():
+    from personal_bench.capture_context import PENDING_IMAGE, load_pending_capture
+    if not load_pending_capture() or not PENDING_IMAGE.exists():
+        raise HTTPException(status_code=404, detail="No pending screenshot")
+    return FileResponse(str(PENDING_IMAGE), media_type="image/jpeg")
+
+
+@app.post("/personal-bench/pending-capture")
+async def api_take_pending_capture(req: PersonalBenchPendingCaptureRequest):
+    """Screenshot now. Context is filled later on the Dataset tab."""
+    from personal_bench.capture_context import take_pending_capture
+    try:
+        pending = take_pending_capture(req.verdict)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return {"status": "pending", "pending": pending}
+
+
+@app.post("/personal-bench/pending-capture/verdict")
+async def api_set_pending_verdict(req: PersonalBenchPendingCaptureRequest):
+    """Update 对/错 on the current pending screenshot without recapturing."""
+    from personal_bench.capture_context import set_pending_verdict
+    if not req.verdict:
+        raise HTTPException(status_code=400, detail="verdict is required")
+    try:
+        pending = set_pending_verdict(req.verdict)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return {"status": "pending", "pending": pending}
+
+
+@app.post("/personal-bench/pending-capture/commit")
+async def api_commit_pending_capture(req: PersonalBenchPendingCommitRequest):
+    from personal_bench.capture_context import commit_pending_capture
+    payload = req.dict(exclude_unset=True)
+    verdict = payload.pop("verdict", None)
+    try:
+        sample = commit_pending_capture(verdict=verdict, context=payload or None)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return {"status": "captured", "sample": _enrich_bench_sample(sample)}
+
+
+@app.delete("/personal-bench/pending-capture")
+async def api_discard_pending_capture():
+    from personal_bench.capture_context import discard_pending_capture
+    discard_pending_capture()
+    return {"status": "discarded"}
+
+
+@app.post("/personal-bench/hotkey-capture")
+async def api_personal_bench_hotkey_capture(req: PersonalBenchPendingCaptureRequest):
+    """Electron global shortcut: screenshot first, keep as pending."""
+    from personal_bench.capture_context import take_pending_capture
+    try:
+        pending = take_pending_capture(req.verdict)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return {"status": "pending", "pending": pending}
+
+
+@app.get("/personal-bench/samples")
+async def api_personal_bench_samples(split: Optional[str] = None):
+    store = _personal_bench_store()
+    samples = [_enrich_bench_sample(s) for s in store.list_samples(split)]
+    return {"samples": samples}
+
+
+@app.post("/personal-bench/samples/from-recent")
+async def api_personal_bench_add(req: PersonalBenchAddRequest):
+    from pathlib import Path
+
+    store = _personal_bench_store()
+    try:
+        sample = store.add_sample(
+            mode=req.mode,
+            human_label=req.human_label,
+            source_image=Path(req.screenshot_path),
+            split=req.split or "train",
+            task=req.task,
+            supervision_level=req.supervision_level,
+            human_reason=req.human_reason,
+            ai_activity=req.ai_activity,
+            ai_reason=req.ai_reason,
+            ai_label=req.ai_label,
+            captured_at=req.captured_at,
+            source=req.source or "manual",
+        )
+    except (ValueError, FileNotFoundError) as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return {"sample": _enrich_bench_sample(sample)}
+
+
+@app.get("/personal-bench/samples/{sample_id}/image")
+async def api_personal_bench_sample_image(sample_id: str):
+    store = _personal_bench_store()
+    sample = store.get(sample_id)
+    if not sample:
+        raise HTTPException(status_code=404, detail="Sample not found")
+    path = store.screenshot_path(sample)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Image missing")
+    return FileResponse(str(path), media_type="image/jpeg")
+
+
+@app.post("/personal-bench/samples/{sample_id}/move")
+async def api_personal_bench_move(sample_id: str, split: str = "test"):
+    store = _personal_bench_store()
+    try:
+        sample = store.move_split(sample_id, split)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Sample not found") from None
+    except (ValueError, FileNotFoundError) as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except OSError as e:
+        raise HTTPException(status_code=500, detail=f"Failed to move sample files: {e}") from e
+    return {"sample": _enrich_bench_sample(sample)}
+
+
+@app.delete("/personal-bench/samples/{sample_id}")
+async def api_personal_bench_delete(sample_id: str):
+    store = _personal_bench_store()
+    if not store.delete_sample(sample_id):
+        raise HTTPException(status_code=404, detail="Sample not found")
+    return {"status": "deleted"}
 
 
 # --- Dataset APIs ---
@@ -493,6 +744,16 @@ class TranslationGradeRequest(BaseModel):
     challenge_id: str
     source_text: str
     user_answer: str
+    source: Optional[str] = None
+    source_name: Optional[str] = None
+    item_index: Optional[int] = None
+    item_total: Optional[int] = None
+    target_language: Optional[str] = None
+
+
+class PracticeUploadRequest(BaseModel):
+    filename: str
+    content: str
 
 
 @app.get("/quiz/generate")
@@ -525,7 +786,39 @@ async def api_translation_challenge():
 async def api_translation_grade(req: TranslationGradeRequest):
     if not req.user_answer.strip():
         raise HTTPException(status_code=400, detail="请输入日语翻译。")
-    return grade_translation_answer(req.source_text, req.user_answer)
+    challenge = {
+        "challenge_id": req.challenge_id,
+        "source_text": req.source_text,
+        "source": req.source or "",
+        "source_name": req.source_name or "",
+        "item_index": req.item_index,
+        "item_total": req.item_total,
+        "target_language": req.target_language or "",
+    }
+    return grade_translation_answer(
+        req.source_text,
+        req.user_answer,
+        target_language=req.target_language,
+        challenge=challenge,
+    )
+
+
+@app.get("/practice/status")
+async def api_practice_status():
+    return get_practice_status()
+
+
+@app.get("/practice/attempts")
+async def api_practice_attempts(limit: int = Query(200, ge=1, le=1000)):
+    return {"attempts": get_practice_attempts(limit=limit)}
+
+
+@app.post("/practice/upload")
+async def api_practice_upload(req: PracticeUploadRequest):
+    try:
+        return save_practice_source_file(req.filename, req.content)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 # --- Schedule APIs ---

@@ -32,9 +32,16 @@ DATASET_DB = DATASET_DIR / "dataset.db"
 GUARDIAN_DIR = DATA_DIR / "guardian"
 GUARDIAN_SCREENSHOT_DIR = GUARDIAN_DIR / "screenshots"
 GUARDIAN_LOG_FILE = GUARDIAN_DIR / "guardian_logs.jsonl"
+GUARDIAN_STATE_FILE = GUARDIAN_DIR / "guardian_state.json"
+PRACTICE_DIR = DATA_DIR / "practice"
+PRACTICE_STATE_FILE = PRACTICE_DIR / "practice_state.json"
+PRACTICE_ATTEMPTS_FILE = PRACTICE_DIR / "practice_attempts.jsonl"
+PERSONAL_BENCH_DIR = DATA_DIR / "personal_bench"
 
 LOGS_DIR.mkdir(parents=True, exist_ok=True)
 SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
 DATASET_SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
 DATASET_EXPORT_DIR.mkdir(parents=True, exist_ok=True)
 GUARDIAN_SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
+PRACTICE_DIR.mkdir(parents=True, exist_ok=True)
+PERSONAL_BENCH_DIR.mkdir(parents=True, exist_ok=True)

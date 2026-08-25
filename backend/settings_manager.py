@@ -1,11 +1,13 @@
 import json
 from datetime import datetime
+from pathlib import Path
 from typing import Dict, List
 
-from data_paths import DATA_DIR
+from data_paths import DATA_DIR, PROJECT_ROOT
 
 
 SETTINGS_FILE = DATA_DIR / "settings.json"
+DEFAULT_PRACTICE_FILE = PROJECT_ROOT.parent / "document" / "0718_Practice.md"
 
 MODEL_OPTIONS: List[Dict[str, str]] = [
     {
@@ -54,6 +56,10 @@ DEFAULT_SETTINGS = {
     "whitelist_behaviors": ["听音乐"],
     "guardian_mode_enabled": True,
     "guardian_check_interval_seconds": 300,
+    "guardian_entertainment_daily_limit_minutes": 60,
+    "guardian_entertainment_day_start_time": "04:00",
+    "practice_source_path": str(DEFAULT_PRACTICE_FILE),
+    "practice_target_language": "Japanese",
     "dataset_tag_options": ["guardian mode"],
     "dataset_retention_days": None,
 }
@@ -113,6 +119,41 @@ def load_settings() -> dict:
         )
     except Exception:
         settings["guardian_check_interval_seconds"] = DEFAULT_SETTINGS["guardian_check_interval_seconds"]
+
+    try:
+        settings["guardian_entertainment_daily_limit_minutes"] = max(
+            0,
+            int(
+                settings.get(
+                    "guardian_entertainment_daily_limit_minutes",
+                    DEFAULT_SETTINGS["guardian_entertainment_daily_limit_minutes"],
+                )
+            ),
+        )
+    except Exception:
+        settings["guardian_entertainment_daily_limit_minutes"] = DEFAULT_SETTINGS[
+            "guardian_entertainment_daily_limit_minutes"
+        ]
+
+    settings["guardian_entertainment_day_start_time"] = _normalize_time_string(
+        settings.get(
+            "guardian_entertainment_day_start_time",
+            DEFAULT_SETTINGS["guardian_entertainment_day_start_time"],
+        ),
+        DEFAULT_SETTINGS["guardian_entertainment_day_start_time"],
+    )
+
+    practice_source_path = str(settings.get("practice_source_path") or "").strip()
+    if practice_source_path:
+        suffix = Path(practice_source_path).suffix.lower()
+        if suffix not in {".md", ".txt"}:
+            practice_source_path = str(DEFAULT_PRACTICE_FILE)
+    else:
+        practice_source_path = str(DEFAULT_PRACTICE_FILE)
+    settings["practice_source_path"] = practice_source_path
+
+    target_language = str(settings.get("practice_target_language") or "").strip()
+    settings["practice_target_language"] = target_language[:80] if target_language else "Japanese"
 
     retention = settings.get("dataset_retention_days")
     if retention in ("", 0):
@@ -203,6 +244,40 @@ def save_settings(settings_update: dict) -> dict:
             raise ValueError("Guardian mode 检测间隔不能少于 30 秒。")
         settings["guardian_check_interval_seconds"] = value
 
+    if "guardian_entertainment_daily_limit_minutes" in settings_update:
+        try:
+            value = int(settings_update["guardian_entertainment_daily_limit_minutes"])
+        except Exception:
+            raise ValueError("Guardian entertainment daily limit must be an integer number of minutes.")
+        if value < 0:
+            raise ValueError("Guardian entertainment daily limit cannot be negative.")
+        if value > 24 * 60:
+            raise ValueError("Guardian entertainment daily limit cannot exceed 24 hours.")
+        settings["guardian_entertainment_daily_limit_minutes"] = value
+
+    if "guardian_entertainment_day_start_time" in settings_update:
+        settings["guardian_entertainment_day_start_time"] = _normalize_time_string(
+            settings_update["guardian_entertainment_day_start_time"],
+            None,
+        )
+
+    if "practice_source_path" in settings_update:
+        value = str(settings_update["practice_source_path"] or "").strip()
+        if not value:
+            raise ValueError("Practice source path cannot be empty.")
+        path = Path(value).expanduser()
+        if path.suffix.lower() not in {".md", ".txt"}:
+            raise ValueError("Practice source must be a Markdown or text file.")
+        settings["practice_source_path"] = str(path)
+
+    if "practice_target_language" in settings_update:
+        value = str(settings_update["practice_target_language"] or "").strip()
+        if not value:
+            raise ValueError("Practice target language cannot be empty.")
+        if len(value) > 80:
+            raise ValueError("Practice target language cannot exceed 80 characters.")
+        settings["practice_target_language"] = value
+
     if "dataset_tag_options" in settings_update:
         tags = _normalize_string_list(settings_update["dataset_tag_options"])
         if "guardian mode" not in {tag.lower() for tag in tags}:
@@ -270,6 +345,39 @@ def is_guardian_mode_enabled() -> bool:
 
 def get_guardian_check_interval_seconds() -> int:
     return int(load_settings()["guardian_check_interval_seconds"])
+
+
+def get_guardian_entertainment_daily_limit_minutes() -> int:
+    return int(load_settings()["guardian_entertainment_daily_limit_minutes"])
+
+
+def get_guardian_entertainment_day_start_time() -> str:
+    return load_settings()["guardian_entertainment_day_start_time"]
+
+
+def get_practice_source_path() -> str:
+    return load_settings()["practice_source_path"]
+
+
+def get_practice_target_language() -> str:
+    return load_settings()["practice_target_language"]
+
+
+def _normalize_time_string(value, fallback: str = None) -> str:
+    text = str(value or "").strip()
+    try:
+        parts = text.split(":")
+        if len(parts) != 2:
+            raise ValueError
+        hour = int(parts[0])
+        minute = int(parts[1])
+        if hour < 0 or hour > 23 or minute < 0 or minute > 59:
+            raise ValueError
+        return f"{hour:02d}:{minute:02d}"
+    except Exception:
+        if fallback is not None:
+            return fallback
+        raise ValueError("Guardian entertainment day start time must be HH:MM.")
 
 
 def _normalize_string_list(value) -> list:

@@ -1,18 +1,27 @@
 import { useState, useEffect, useRef } from 'react'
 import {
   startSession, stopSession, getStatus,
+  startGuardianEntertainment,
   getSchedules, addSchedule, deleteSchedule,
   getDailyReport, testBlock,
   getSettings, saveSettings, getAiStatus,
+  getPracticeStatus, uploadPracticeFile,
   saveDailyNotes,
-  captureDatasetSample,
-  deleteDatasetSample,
-  exportDataset,
-  getDatasetImageUrl,
-  getDatasetSamples,
   getGuardianImageUrl,
-  openDatasetFolder,
-  updateDatasetSample
+  getPersonalBenchRecent,
+  getPersonalBenchRecentImageUrl,
+  getPersonalBenchSamples,
+  getPersonalBenchSampleImageUrl,
+  getPersonalBenchCaptureContext,
+  getPersonalBenchPendingCapture,
+  getPersonalBenchPendingImageUrl,
+  takePersonalBenchPendingCapture,
+  updatePersonalBenchPendingVerdict,
+  commitPersonalBenchPendingCapture,
+  discardPersonalBenchPendingCapture,
+  movePersonalBenchSample,
+  deletePersonalBenchSample,
+  addPersonalBenchFromRecent,
 } from './api'
 
 function todayString() {
@@ -78,16 +87,35 @@ function App() {
   const [whitelistText, setWhitelistText] = useState('')
   const [guardianEnabled, setGuardianEnabled] = useState(true)
   const [guardianInterval, setGuardianInterval] = useState('300')
+  const [guardianEntertainmentMinutes, setGuardianEntertainmentMinutes] = useState('20')
+  const [guardianDailyEntertainmentLimit, setGuardianDailyEntertainmentLimit] = useState('60')
+  const [guardianDayStartTime, setGuardianDayStartTime] = useState('04:00')
+  const [guardianActionStatus, setGuardianActionStatus] = useState('')
+  const [practiceTargetLanguage, setPracticeTargetLanguage] = useState('Japanese')
+  const [practiceStatus, setPracticeStatus] = useState(null)
+  const [practiceUploadStatus, setPracticeUploadStatus] = useState('')
   const [datasetTagOptions, setDatasetTagOptions] = useState(['guardian mode'])
   const [datasetTagOptionsText, setDatasetTagOptionsText] = useState('guardian mode')
   const [settingsStatus, setSettingsStatus] = useState('')
-  const [datasetSamples, setDatasetSamples] = useState([])
-  const [datasetIndex, setDatasetIndex] = useState(0)
-  const [datasetLabelFilter, setDatasetLabelFilter] = useState('')
-  const [datasetReviewedFilter, setDatasetReviewedFilter] = useState('unreviewed')
-  const [datasetActivity, setDatasetActivity] = useState('')
-  const [datasetNotes, setDatasetNotes] = useState('')
+  const [captureContext, setCaptureContext] = useState({
+    mode: 'guardian',
+    task: '',
+    supervision_level: '',
+    activity: '',
+    note: '',
+    split: 'train',
+  })
+  const [benchSamples, setBenchSamples] = useState([])
+  const [benchSampleId, setBenchSampleId] = useState(null)
+  const [benchSplitFilter, setBenchSplitFilter] = useState('')
+  const [pendingCapture, setPendingCapture] = useState(null)
+  const [benchSaving, setBenchSaving] = useState(false)
   const [datasetStatus, setDatasetStatus] = useState('')
+  const [recentJudgments, setRecentJudgments] = useState([])
+  const [expandedJudgmentId, setExpandedJudgmentId] = useState(null)
+  const [benchHumanLabel, setBenchHumanLabel] = useState('')
+  const [benchHumanReason, setBenchHumanReason] = useState('')
+  const [benchStatus, setBenchStatus] = useState('')
 
   const applySessionStatus = (s) => {
     setStatus(s)
@@ -128,6 +156,9 @@ function App() {
       setRemainingSeconds(0)
       return
     }
+    if (status?.should_block) {
+      return
+    }
 
     const tick = () => {
       const left = Math.max(0, Math.ceil((sessionEndsAtRef.current - Date.now()) / 1000))
@@ -143,7 +174,7 @@ function App() {
     tick()
     const id = window.setInterval(tick, COUNTDOWN_TICK_MS)
     return () => window.clearInterval(id)
-  }, [isRunning])
+  }, [isRunning, status?.should_block])
 
   useEffect(() => {
     if (isRunning || !status?.flow_status?.active) return
@@ -176,6 +207,22 @@ function App() {
     return () => window.clearInterval(id)
   }, [])
 
+  const refreshRecentJudgments = async () => {
+    try {
+      const data = await getPersonalBenchRecent(10)
+      setRecentJudgments(data.items || [])
+    } catch (e) {
+      // Keep previous list if backend is still starting.
+    }
+  }
+
+  useEffect(() => {
+    if (tab !== 'session') return
+    refreshRecentJudgments()
+    const id = window.setInterval(refreshRecentJudgments, 30000)
+    return () => window.clearInterval(id)
+  }, [tab])
+
   useEffect(() => {
     if (tab === 'schedule') {
       refreshSchedules()
@@ -205,6 +252,9 @@ function App() {
           setWhitelistText((d.settings?.whitelist_behaviors || []).join('\n'))
           setGuardianEnabled(Boolean(d.settings?.guardian_mode_enabled ?? true))
           setGuardianInterval(String(d.settings?.guardian_check_interval_seconds || 300))
+          setGuardianDailyEntertainmentLimit(String(d.settings?.guardian_entertainment_daily_limit_minutes ?? 60))
+          setGuardianDayStartTime(d.settings?.guardian_entertainment_day_start_time || '04:00')
+          setPracticeTargetLanguage(d.settings?.practice_target_language || 'Japanese')
           setDatasetTagOptions(d.settings?.dataset_tag_options || ['guardian mode'])
           setDatasetTagOptionsText((d.settings?.dataset_tag_options || ['guardian mode']).join('\n'))
           setSettingsStatus('')
@@ -213,44 +263,51 @@ function App() {
     }
   }, [tab])
 
-  useEffect(() => {
-    if (tab === 'dataset') {
-      getSettings()
-        .then((d) => {
-          setDatasetTagOptions(d.settings?.dataset_tag_options || ['guardian mode'])
-          setDatasetTagOptionsText((d.settings?.dataset_tag_options || ['guardian mode']).join('\n'))
-        })
-        .catch(() => {})
-      refreshDataset()
-    }
-  }, [tab, datasetLabelFilter, datasetReviewedFilter])
+  const captureContextLoadedRef = useRef(false)
 
   useEffect(() => {
-    const current = datasetSamples[datasetIndex]
-    setDatasetActivity(current?.activity || '')
-    setDatasetNotes(current?.label_notes || '')
-  }, [datasetSamples, datasetIndex])
+    const onPending = () => {
+      setTab('dataset')
+      refreshPendingCapture()
+    }
+    window.addEventListener('aimonitor-pending-capture', onPending)
+    return () => window.removeEventListener('aimonitor-pending-capture', onPending)
+  }, [])
 
   useEffect(() => {
     if (tab !== 'dataset') return
-
-    const onKeyDown = (e) => {
-      const tag = String(e.target?.tagName || '').toLowerCase()
-      const editing = tag === 'input' || tag === 'textarea' || tag === 'select'
-      if (editing && !['Escape'].includes(e.key)) return
-      if (e.key === '1') updateCurrentDatasetLabel('on_task')
-      if (e.key === '2') updateCurrentDatasetLabel('off_task')
-      if (e.key === '3') updateCurrentDatasetLabel('ambiguous')
-      if (e.key.toLowerCase() === 'r') toggleCurrentReviewed()
-      if (e.key.toLowerCase() === 'a') document.getElementById('dataset-activity')?.focus()
-      if (e.key.toLowerCase() === 'n') document.getElementById('dataset-notes')?.focus()
-      if (e.key === 'ArrowLeft') setDatasetIndex((i) => Math.max(0, i - 1))
-      if (e.key === 'ArrowRight') setDatasetIndex((i) => Math.min(Math.max(0, datasetSamples.length - 1), i + 1))
+    if (!captureContextLoadedRef.current) {
+      captureContextLoadedRef.current = true
+      getPersonalBenchCaptureContext()
+        .then((d) => {
+          const c = d.context || {}
+          setCaptureContext({
+            mode: c.mode || 'guardian',
+            task: c.task || '',
+            supervision_level: c.supervision_level || '',
+            activity: c.activity || '',
+            note: c.note || '',
+            split: c.split || 'train',
+          })
+        })
+        .catch(() => {})
     }
+    refreshPendingCapture()
+    refreshBenchSamples()
+    const id = window.setInterval(() => {
+      refreshPendingCapture()
+      refreshBenchSamples()
+    }, 4000)
+    return () => window.clearInterval(id)
+  }, [tab, benchSplitFilter])
 
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [tab, datasetSamples, datasetIndex, datasetActivity, datasetNotes])
+  useEffect(() => {
+    if (tab === 'settings') {
+      getPracticeStatus()
+        .then(setPracticeStatus)
+        .catch(() => {})
+    }
+  }, [tab])
 
   const refreshSchedules = async () => {
     try {
@@ -273,129 +330,140 @@ function App() {
     }
   }
 
-  const refreshDataset = async () => {
+  const refreshBenchSamples = async () => {
     try {
-      const reviewed = datasetReviewedFilter === '' ? '' : datasetReviewedFilter === 'reviewed'
-      const data = await getDatasetSamples({ label: datasetLabelFilter, reviewed })
-      setDatasetSamples(data.samples || [])
-      setDatasetIndex((i) => Math.min(i, Math.max(0, (data.samples || []).length - 1)))
-      setDatasetStatus('')
-    } catch (e) {
-      setDatasetStatus(e.message || '数据集读取失败')
-    }
-  }
-
-  const currentDatasetSample = datasetSamples[datasetIndex]
-
-  const datasetSampleMatchesFilters = (sample) => {
-    if (!sample) return false
-    if (datasetLabelFilter && sample.distraction_label !== datasetLabelFilter) return false
-    if (datasetReviewedFilter === 'reviewed' && !sample.reviewed) return false
-    if (datasetReviewedFilter === 'unreviewed' && sample.reviewed) return false
-    return true
-  }
-
-  const getDatasetSampleTags = (sample) => {
-    const sampleTags = Array.isArray(sample?.tags) ? sample.tags.filter(Boolean) : []
-    return sampleTags
-  }
-
-  const labelButtonClass = (label) => (
-    currentDatasetSample?.distraction_label === label ? 'btn-secondary chip-active' : 'btn-secondary'
-  )
-
-  const applyDatasetSampleUpdate = (updated, message) => {
-    const keep = datasetSampleMatchesFilters(updated)
-    const next = keep
-      ? datasetSamples.map((s) => (s.id === updated.id ? updated : s))
-      : datasetSamples.filter((s) => s.id !== updated.id)
-    setDatasetSamples(next)
-    setDatasetIndex((i) => Math.min(i, Math.max(0, next.length - 1)))
-    setDatasetStatus(message)
-  }
-
-  const updateCurrentDatasetLabel = async (label) => {
-    if (!currentDatasetSample) return
-    try {
-      const updated = await updateDatasetSample(currentDatasetSample.id, { distraction_label: label })
-      applyDatasetSampleUpdate(updated, '标签已保存')
-    } catch (e) {
-      setDatasetStatus(e.message || '标签保存失败')
-    }
-  }
-
-  const toggleCurrentReviewed = async () => {
-    if (!currentDatasetSample) return
-    try {
-      const updated = await updateDatasetSample(currentDatasetSample.id, { reviewed: !currentDatasetSample.reviewed })
-      applyDatasetSampleUpdate(updated, updated.reviewed ? '已标记 reviewed' : '已取消 reviewed')
-    } catch (e) {
-      setDatasetStatus(e.message || 'reviewed 更新失败')
-    }
-  }
-
-  const saveCurrentDatasetSample = async () => {
-    if (!currentDatasetSample) return
-    try {
-      const updated = await updateDatasetSample(currentDatasetSample.id, {
-        activity: datasetActivity,
-        label_notes: datasetNotes,
+      const data = await getPersonalBenchSamples(benchSplitFilter)
+      const samples = data.samples || []
+      setBenchSamples(samples)
+      setBenchSampleId((id) => {
+        if (id && samples.some((s) => s.id === id)) return id
+        return samples[0]?.id || null
       })
-      applyDatasetSampleUpdate(updated, '样本已保存')
     } catch (e) {
-      setDatasetStatus(e.message || '样本保存失败')
+      setDatasetStatus(e.message || '样本读取失败')
     }
   }
 
-  const toggleCurrentDatasetTag = async (tag) => {
-    if (!currentDatasetSample) return
-    const cleanTag = String(tag || '').trim()
-    if (!cleanTag) return
-    const currentTags = getDatasetSampleTags(currentDatasetSample)
-    const hasTag = currentTags.some((item) => item.toLowerCase() === cleanTag.toLowerCase())
-    const nextTags = hasTag
-      ? currentTags.filter((item) => item.toLowerCase() !== cleanTag.toLowerCase())
-      : [...currentTags, cleanTag]
+  const refreshPendingCapture = async () => {
     try {
-      const updated = await updateDatasetSample(currentDatasetSample.id, { tags: nextTags })
-      applyDatasetSampleUpdate(updated, '任务标签已保存')
+      const data = await getPersonalBenchPendingCapture()
+      const next = data.pending || null
+      setPendingCapture((prev) => {
+        if (!next) return null
+        if (prev && prev.captured_at === next.captured_at) {
+          return { ...next, verdict: prev.verdict || next.verdict }
+        }
+        return next
+      })
     } catch (e) {
-      setDatasetStatus(e.message || '任务标签保存失败')
+      // Keep the last pending screenshot if the poll fails.
     }
   }
 
-  const deleteCurrentDatasetSample = async () => {
-    if (!currentDatasetSample) return
-    try {
-      await deleteDatasetSample(currentDatasetSample.id)
-      const next = datasetSamples.filter((s) => s.id !== currentDatasetSample.id)
-      setDatasetSamples(next)
-      setDatasetIndex((i) => Math.min(i, Math.max(0, next.length - 1)))
-      setDatasetStatus('样本已删除')
-    } catch (e) {
-      setDatasetStatus(e.message || '删除失败')
-    }
+  const currentBenchSample = benchSamples.find((s) => s.id === benchSampleId) || null
+
+  const updateCaptureField = (key, value) => {
+    setCaptureContext((prev) => {
+      const next = { ...prev, [key]: value }
+      if (key === 'mode' && value === 'guardian') next.task = ''
+      return next
+    })
   }
 
-  const captureDataset = async (label) => {
+  const capturePending = async (verdict) => {
     try {
-      const result = await captureDatasetSample(label)
-      if (datasetSampleMatchesFilters(result.sample)) {
-        setDatasetSamples((samples) => [result.sample, ...samples])
-        setDatasetIndex(0)
-      }
-      setDatasetStatus(`已截图：${label}${datasetSampleMatchesFilters(result.sample) ? '' : '（不在当前筛选中）'}`)
+      const result = await takePersonalBenchPendingCapture(verdict)
+      setPendingCapture(result.pending || null)
+      setDatasetStatus(result.pending?.replaced ? '已截图（覆盖了未保存的上一张）' : '已截图，请对着图填 context 后保存')
     } catch (e) {
       setDatasetStatus(e.message || '截图失败')
     }
   }
 
-  const handleDatasetExport = async () => {
+  const setPendingVerdict = async (verdict) => {
+    if (!pendingCapture) {
+      await capturePending(verdict)
+      return
+    }
     try {
-      const result = await exportDataset()
-      setDatasetStatus(`已导出 ${result.count} 条：${result.path}`)
+      const result = await updatePersonalBenchPendingVerdict(verdict)
+      setPendingCapture(result.pending || { ...pendingCapture, verdict })
+      setDatasetStatus(`已标记：${verdict}`)
     } catch (e) {
-      setDatasetStatus(e.message || '导出失败')
+      setDatasetStatus(e.message || '标记失败')
+    }
+  }
+
+  const commitPending = async (verdict) => {
+    const chosen = verdict || pendingCapture?.verdict
+    if (!pendingCapture) {
+      setDatasetStatus('请先截图，再填 context 保存')
+      return
+    }
+    if (!chosen) {
+      setDatasetStatus('请选择对或错')
+      return
+    }
+    if (benchSaving) return
+    setBenchSaving(true)
+    try {
+      const result = await commitPersonalBenchPendingCapture({
+        verdict: chosen,
+        mode: captureContext.mode,
+        task: captureContext.mode === 'session' ? captureContext.task : '',
+        supervision_level: captureContext.supervision_level || null,
+        activity: captureContext.activity,
+        note: captureContext.note,
+        split: captureContext.split,
+      })
+      const sample = result.sample
+      setPendingCapture(null)
+      if (sample && (!benchSplitFilter || sample.split === benchSplitFilter)) {
+        setBenchSamples((list) => [sample, ...list.filter((s) => s.id !== sample.id)])
+        setBenchSampleId(sample.id)
+      } else {
+        await refreshBenchSamples()
+      }
+      setCaptureContext((prev) => ({ ...prev, activity: '', note: '' }))
+      setDatasetStatus(`已入库：${sample?.verdict || chosen} → ${sample?.human_label || ''}`)
+    } catch (e) {
+      setDatasetStatus(e.message || '保存失败')
+    } finally {
+      setBenchSaving(false)
+    }
+  }
+
+  const discardPending = async () => {
+    try {
+      await discardPersonalBenchPendingCapture()
+      setPendingCapture(null)
+      setDatasetStatus('已丢弃未保存截图')
+    } catch (e) {
+      setDatasetStatus(e.message || '丢弃失败')
+    }
+  }
+
+  const moveBenchSample = async (split) => {
+    if (!currentBenchSample) return
+    try {
+      await movePersonalBenchSample(currentBenchSample.id, split)
+      await refreshBenchSamples()
+      setDatasetStatus(`已移到 ${split}`)
+    } catch (e) {
+      setDatasetStatus(e.message || '移动失败')
+    }
+  }
+
+  const deleteBenchSample = async () => {
+    if (!currentBenchSample) return
+    try {
+      await deletePersonalBenchSample(currentBenchSample.id)
+      const next = benchSamples.filter((s) => s.id !== currentBenchSample.id)
+      setBenchSamples(next)
+      setBenchSampleId(next[0]?.id || null)
+      setDatasetStatus('样本已删除')
+    } catch (e) {
+      setDatasetStatus(e.message || '删除失败')
     }
   }
 
@@ -468,6 +536,44 @@ function App() {
   const handleStop = async () => {
     setStopTags((status?.tags || []).join(', '))
     setShowStopForm(true)
+  }
+
+  const handleStartGuardianEntertainment = async () => {
+    setGuardianActionStatus('')
+    const minutes = parsePositiveInt(guardianEntertainmentMinutes, 1)
+    if (minutes === null) {
+      setGuardianActionStatus('请输入 1 分钟以上的娱乐时长。')
+      return
+    }
+    try {
+      await startGuardianEntertainment(minutes)
+      setGuardianActionStatus('娱乐时间已开始。')
+      applySessionStatus(await getStatus())
+    } catch (e) {
+      setGuardianActionStatus(e.message || '无法开始娱乐时间。')
+    }
+  }
+
+  const handlePracticeUpload = async (event) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+    setPracticeUploadStatus('上传中...')
+    try {
+      const content = await file.text()
+      const res = await uploadPracticeFile(file.name, content)
+      setPracticeStatus({
+        source_path: res.path,
+        source_name: res.name,
+        item_count: res.item_count,
+        target_language: res.settings?.practice_target_language || practiceTargetLanguage,
+      })
+      setSettings(res.settings)
+      setPracticeUploadStatus(`已选择 ${res.name}，共 ${res.item_count} 条。`)
+    } catch (e) {
+      setPracticeUploadStatus(e.message || '上传失败')
+    } finally {
+      event.target.value = ''
+    }
   }
 
   const handleConfirmStop = async () => {
@@ -557,6 +663,7 @@ function App() {
     const defaultIntervalSeconds = parsePositiveInt(defaultInterval, 5)
     const defaultThreshold = parsePositiveInt(defaultTriggerThreshold, 1)
     const guardianIntervalSeconds = parsePositiveInt(guardianInterval, 30)
+    const guardianDailyLimitMinutes = parsePositiveInt(guardianDailyEntertainmentLimit, 0)
     if (!nudgePrompt.trim()) {
       setSettingsStatus('提示语不能为空。')
       return
@@ -574,6 +681,18 @@ function App() {
       return
     }
     setSettingsStatus('保存中...')
+    if (guardianDailyLimitMinutes === null) {
+      setSettingsStatus('Guardian 每日娱乐额度需要是 0 分钟以上的整数。')
+      return
+    }
+    if (!/^\d{1,2}:\d{2}$/.test(guardianDayStartTime)) {
+      setSettingsStatus('Guardian 新一天开始时间需要是 HH:MM。')
+      return
+    }
+    if (!practiceTargetLanguage.trim()) {
+      setSettingsStatus('Practice 目标语言不能为空。')
+      return
+    }
     try {
       const res = await saveSettings({
         model: selectedModel,
@@ -589,6 +708,9 @@ function App() {
           .filter(Boolean),
         guardian_mode_enabled: guardianEnabled,
         guardian_check_interval_seconds: guardianIntervalSeconds,
+        guardian_entertainment_daily_limit_minutes: guardianDailyLimitMinutes,
+        guardian_entertainment_day_start_time: guardianDayStartTime,
+        practice_target_language: practiceTargetLanguage.trim(),
         dataset_tag_options: parsePresetTags(datasetTagOptionsText),
         strict_mode_enabled: true,
       })
@@ -598,6 +720,9 @@ function App() {
       setWhitelistText((res.settings?.whitelist_behaviors || []).join('\n'))
       setGuardianEnabled(Boolean(res.settings?.guardian_mode_enabled ?? guardianEnabled))
       setGuardianInterval(String(res.settings?.guardian_check_interval_seconds || guardianIntervalSeconds))
+      setGuardianDailyEntertainmentLimit(String(res.settings?.guardian_entertainment_daily_limit_minutes ?? guardianDailyLimitMinutes))
+      setGuardianDayStartTime(res.settings?.guardian_entertainment_day_start_time || guardianDayStartTime)
+      setPracticeTargetLanguage(res.settings?.practice_target_language || practiceTargetLanguage.trim())
       setDatasetTagOptions(res.settings?.dataset_tag_options || ['guardian mode'])
       setDatasetTagOptionsText((res.settings?.dataset_tag_options || ['guardian mode']).join('\n'))
       setSettingsStatus('已保存，下一次 AI 判定生效。')
@@ -614,6 +739,49 @@ function App() {
       setNotesStatus('已保存')
     } catch (e) {
       setNotesStatus(e.message || '保存失败')
+    }
+  }
+
+  const labelsForBenchMode = (mode) => (
+    mode === 'guardian'
+      ? ['allow', 'interrupt', 'ambiguous']
+      : ['on_task', 'off_task', 'ambiguous']
+  )
+
+  const toggleJudgmentExpand = (item) => {
+    if (expandedJudgmentId === item.id) {
+      setExpandedJudgmentId(null)
+      return
+    }
+    setExpandedJudgmentId(item.id)
+    setBenchHumanLabel(item.suggested_human_label || (item.mode === 'guardian' ? 'allow' : 'on_task'))
+    setBenchHumanReason('')
+    setBenchStatus('')
+  }
+
+  const handleAddToPersonalBench = async (item) => {
+    if (!item?.screenshot_available) {
+      setBenchStatus('该条没有可用截图，无法加入校准集。')
+      return
+    }
+    try {
+      const result = await addPersonalBenchFromRecent({
+        mode: item.mode,
+        human_label: benchHumanLabel || item.suggested_human_label,
+        screenshot_path: item.screenshot_path,
+        split: 'train',
+        task: item.task || '',
+        supervision_level: item.supervision_level,
+        human_reason: benchHumanReason,
+        ai_activity: item.ai_activity,
+        ai_reason: item.ai_reason,
+        ai_label: item.ai_label,
+        captured_at: item.captured_at,
+        source: item.source,
+      })
+      setBenchStatus(`已加入 train：${result.sample?.human_label} · ${result.sample?.id?.slice(0, 8)}`)
+    } catch (e) {
+      setBenchStatus(e.message || '加入失败')
     }
   }
 
@@ -638,6 +806,7 @@ function App() {
   const guardianStatus = status?.guardian_status
   const guardianJudgement = guardianStatus?.latest_judgement
   const guardianBreakStatus = guardianStatus?.break_status
+  const guardianEntertainmentStatus = guardianStatus?.entertainment_status
   const guardianStateLabel = guardianBreakStatus?.active
     ? '休息中'
     : guardianStatus?.paused_by_session
@@ -645,6 +814,16 @@ function App() {
     : guardianStatus?.effective_enabled
       ? '运行中'
       : '关闭'
+
+  const guardianEffectiveStateLabel = guardianBreakStatus?.active
+    ? '休息中'
+    : guardianEntertainmentStatus?.active
+      ? '娱乐时间中'
+      : guardianStatus?.paused_by_session
+        ? 'Session 中暂停'
+        : guardianStatus?.effective_enabled
+          ? '运行中'
+          : '关闭'
 
   const blockStart = (b) => b.actual_start || b.planned_start
   const blockEnd = (b) => b.actual_end || b.planned_end
@@ -718,7 +897,7 @@ function App() {
         <>
           <section className={`status-panel guardian-panel ${guardianJudgement?.should_interrupt ? 'guardian-alert' : ''}`}>
             <div className="status-header">
-              <div className="status-badge">Guardian mode：{guardianStateLabel}</div>
+              <div className="status-badge">Guardian mode：{guardianEffectiveStateLabel}</div>
               <div className="flow-timer">{guardianStatus?.check_interval_seconds || '--'}s</div>
             </div>
             <div className="status-info">
@@ -740,12 +919,41 @@ function App() {
                   <span className="value timer">{formatTime(guardianBreakStatus.remaining_seconds || 0)}</span>
                 </div>
               )}
-            </div>
-            {guardianStatus?.latest_screenshot_url && (
-              <div className="guardian-preview">
-                <img src={getGuardianImageUrl(guardianStatus)} alt="Guardian latest screenshot" />
+              <div className="info-item">
+                <span className="label">娱乐额度</span>
+                <span className="value">
+                  今日剩余 {formatTime(guardianEntertainmentStatus?.remaining_seconds || 0)}
+                  {guardianEntertainmentStatus?.active ? ` · 本次 ${formatTime(guardianEntertainmentStatus.active_remaining_seconds || 0)}` : ''}
+                </span>
               </div>
-            )}
+            </div>
+            <div className="guardian-actions">
+              <div className="input-group guardian-minutes">
+                <label>本次娱乐（分钟）</label>
+                <input
+                  type="number"
+                  value={guardianEntertainmentMinutes}
+                  onChange={(e) => setGuardianEntertainmentMinutes(e.target.value)}
+                  min="1"
+                  step="1"
+                />
+              </div>
+              <button
+                type="button"
+                className="btn-small"
+                disabled={
+                  isRunning ||
+                  guardianBreakStatus?.active ||
+                  guardianEntertainmentStatus?.active ||
+                  !guardianStatus?.enabled ||
+                  (guardianEntertainmentStatus?.remaining_seconds || 0) <= 0
+                }
+                onClick={handleStartGuardianEntertainment}
+              >
+                开始娱乐
+              </button>
+            </div>
+            {guardianActionStatus && <p className="settings-status">{guardianActionStatus}</p>}
           </section>
 
           {!isRunning && flowStatus?.active && (
@@ -845,9 +1053,98 @@ function App() {
             </section>
           )}
 
+          <section className="logs recent-judgments">
+            <div className="status-header">
+              <h2>最近判定</h2>
+              <button type="button" className="btn-secondary" onClick={refreshRecentJudgments}>刷新</button>
+            </div>
+            <p className="recent-judgments-hint">点击条目展开查看截图与 context；若 AI 判错，可纠正后加入 train 校准集。</p>
+            {recentJudgments.length === 0 ? (
+              <p className="empty-msg">暂无判定记录。Guardian / Session 检查后会出现在这里。</p>
+            ) : (
+              <div className="log-list recent-judgment-list">
+                {recentJudgments.map((item) => {
+                  const expanded = expandedJudgmentId === item.id
+                  const tone = item.judgement_status === 'api_error'
+                    ? 'api-error'
+                    : (item.ai_label === 'interrupt' || item.ai_label === 'off_task')
+                      ? 'off-task'
+                      : 'on-task'
+                  return (
+                    <div key={item.id} className={`log-item recent-judgment-item ${tone} ${expanded ? 'expanded' : ''}`}>
+                      <button type="button" className="recent-judgment-summary" onClick={() => toggleJudgmentExpand(item)}>
+                        <div className="log-time">{item.captured_at ? new Date(item.captured_at).toLocaleTimeString() : '--'}</div>
+                        <div className="log-details">
+                          <span className="log-activity">
+                            <span className="pill">{item.mode}</span>
+                            <span className="pill">{item.ai_label || '—'}</span>
+                            {item.ai_activity || '(no activity)'}
+                          </span>
+                          <span className="log-reason">{item.ai_reason || '--'}</span>
+                          <span className="log-model">{item.judgement_status || 'ok'}{item.task ? ` · ${item.task}` : ''}{item.screenshot_available ? '' : ' · 无图'}</span>
+                        </div>
+                        <div className="log-confidence">{expanded ? '收起' : '展开'}</div>
+                      </button>
+                      {expanded && (
+                        <div className="recent-judgment-detail">
+                          <div className="recent-judgment-grid">
+                            <div className="recent-judgment-shot">
+                              {item.screenshot_available ? (
+                                <img
+                                  src={getPersonalBenchRecentImageUrl(item)}
+                                  alt="Judgment screenshot"
+                                  title="点击图片可在原尺寸/适应宽度间切换"
+                                  onClick={(e) => e.currentTarget.classList.toggle('zoomed')}
+                                />
+                              ) : (
+                                <p className="empty-msg">无可用截图</p>
+                              )}
+                            </div>
+                            <div className="recent-judgment-context">
+                              <div className="info-item"><span className="label">mode</span><span className="value">{item.mode}</span></div>
+                              <div className="info-item"><span className="label">captured_at</span><span className="value">{item.captured_at || '--'}</span></div>
+                              <div className="info-item"><span className="label">task</span><span className="value">{item.task || '(guardian 无任务)'}</span></div>
+                              <div className="info-item"><span className="label">AI 标签</span><span className="value">{item.ai_label || '--'}</span></div>
+                              <div className="info-item"><span className="label">AI activity</span><span className="value">{item.ai_activity || '--'}</span></div>
+                              <div className="info-item"><span className="label">AI reason</span><span className="value">{item.ai_reason || '--'}</span></div>
+                              <div className="info-item"><span className="label">confidence</span><span className="value">{item.ai_confidence ?? '--'}</span></div>
+                            </div>
+                          </div>
+                          <div className="recent-judgment-correct">
+                            <div className="input-group">
+                              <label>人工标签（纠正 AI）</label>
+                              <select value={benchHumanLabel} onChange={(e) => setBenchHumanLabel(e.target.value)}>
+                                {labelsForBenchMode(item.mode).map((label) => (
+                                  <option key={label} value={label}>{label}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div className="input-group">
+                              <label>人工理由</label>
+                              <input
+                                type="text"
+                                value={benchHumanReason}
+                                onChange={(e) => setBenchHumanReason(e.target.value)}
+                                placeholder="例如：主窗口是文档，不是娱乐"
+                              />
+                            </div>
+                            <button type="button" className="btn-start" onClick={() => handleAddToPersonalBench(item)}>
+                              纠正并加入 train
+                            </button>
+                          </div>
+                          {benchStatus && <p className="settings-status">{benchStatus}</p>}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </section>
+
           {status?.logs && status.logs.length > 0 && (
             <section className="logs">
-              <h2>最近检查</h2>
+              <h2>当前 Session 检查</h2>
               <div className="log-list">
                 {[...status.logs].reverse().map((log, i) => (
                   <div key={i} className={`log-item ${log.judgement_status === 'api_error' ? 'api-error' : log.on_task ? 'on-task' : 'off-task'}`}>
@@ -1026,138 +1323,165 @@ function App() {
       {tab === 'dataset' && (
         <section className="dataset-panel">
           <div className="section-title-row">
-            <h2>截图数据集</h2>
-            <button className="btn-secondary" onClick={refreshDataset}>刷新</button>
+            <h2>个人 Bench 截图</h2>
+            <button className="btn-secondary" onClick={() => { refreshPendingCapture(); refreshBenchSamples() }}>刷新</button>
           </div>
+          <p className="settings-current">
+            Ctrl+Alt+1/2 先截当前屏。对着图填 context，再保存入库。
+          </p>
 
           <div className="dataset-capture-row">
-            <button className="btn-secondary" onClick={() => captureDataset('on_task')}>1 on_task</button>
-            <button className="btn-secondary" onClick={() => captureDataset('off_task')}>2 off_task</button>
-            <button className="btn-secondary" onClick={() => captureDataset('ambiguous')}>3 ambiguous</button>
-            <button className="btn-secondary" onClick={() => captureDataset('unlabeled')}>0 unlabeled</button>
+            <button className="btn-secondary" onClick={() => capturePending(pendingCapture?.verdict)}>截图</button>
+            <button
+              className={pendingCapture?.verdict === '对' ? 'btn-start' : 'btn-secondary'}
+              onClick={() => setPendingVerdict('对')}
+            >
+              1 对 → {captureContext.mode === 'guardian' ? 'allow' : 'on_task'}
+            </button>
+            <button
+              className={pendingCapture?.verdict === '错' ? 'btn-stop' : 'btn-secondary'}
+              onClick={() => setPendingVerdict('错')}
+            >
+              2 错 → {captureContext.mode === 'guardian' ? 'interrupt' : 'off_task'}
+            </button>
+            <button className="btn-start" onClick={() => commitPending()} disabled={!pendingCapture || benchSaving}>保存入库</button>
+            {pendingCapture && (
+              <button className="btn-secondary" onClick={discardPending}>丢弃截图</button>
+            )}
           </div>
 
-          <div className="input-row">
-            <div className="input-group">
-              <label>标签筛选</label>
-              <select value={datasetLabelFilter} onChange={(e) => { setDatasetLabelFilter(e.target.value); setDatasetIndex(0) }}>
-                <option value="">全部</option>
-                <option value="on_task">on_task</option>
-                <option value="off_task">off_task</option>
-                <option value="ambiguous">ambiguous</option>
-                <option value="unlabeled">unlabeled</option>
-              </select>
+          {pendingCapture && (
+            <div className="dataset-layout">
+              <div className="dataset-preview">
+                <img src={getPersonalBenchPendingImageUrl(pendingCapture)} alt="Pending screenshot" />
+              </div>
+              <div className="dataset-editor">
+                <div className="history-meta">
+                  <span>待保存 · {pendingCapture.verdict || '未选对/错'}</span>
+                  <span>{pendingCapture.captured_at ? new Date(pendingCapture.captured_at).toLocaleString() : ''}</span>
+                </div>
+                <div className="input-row">
+                  <div className="input-group">
+                    <label>mode</label>
+                    <select value={captureContext.mode} onChange={(e) => updateCaptureField('mode', e.target.value)}>
+                      <option value="guardian">guardian</option>
+                      <option value="session">session</option>
+                    </select>
+                  </div>
+                  <div className="input-group">
+                    <label>split</label>
+                    <select value={captureContext.split} onChange={(e) => updateCaptureField('split', e.target.value)}>
+                      <option value="train">train</option>
+                      <option value="test">test</option>
+                    </select>
+                  </div>
+                </div>
+                {captureContext.mode === 'session' && (
+                  <div className="input-row">
+                    <div className="input-group">
+                      <label>task（session 必填）</label>
+                      <input
+                        value={captureContext.task}
+                        onChange={(e) => updateCaptureField('task', e.target.value)}
+                        placeholder="例如：写报告 / 写代码"
+                      />
+                    </div>
+                    <div className="input-group">
+                      <label>supervision_level（可选）</label>
+                      <select
+                        value={captureContext.supervision_level}
+                        onChange={(e) => updateCaptureField('supervision_level', e.target.value)}
+                      >
+                        <option value="">（空）</option>
+                        <option value="not_entertainment">not_entertainment</option>
+                        <option value="task_related">task_related</option>
+                      </select>
+                    </div>
+                  </div>
+                )}
+                <div className="input-group">
+                  <label>activity（画面在干什么）</label>
+                  <input
+                    value={captureContext.activity}
+                    onChange={(e) => updateCaptureField('activity', e.target.value)}
+                    placeholder="例如：VS Code 编辑器 / 微博时间线"
+                  />
+                </div>
+                <div className="input-group">
+                  <label>note（可选备注）</label>
+                  <textarea
+                    value={captureContext.note}
+                    onChange={(e) => updateCaptureField('note', e.target.value)}
+                    placeholder="为何标对/错"
+                  />
+                </div>
+              </div>
             </div>
-            <div className="input-group">
-              <label>Reviewed</label>
-              <select value={datasetReviewedFilter} onChange={(e) => { setDatasetReviewedFilter(e.target.value); setDatasetIndex(0) }}>
-                <option value="">全部</option>
-                <option value="reviewed">已 reviewed</option>
-                <option value="unreviewed">未 reviewed</option>
-              </select>
-            </div>
-          </div>
+          )}
 
-          {datasetSamples.length > 0 && (
+          {!pendingCapture && (
+            <>
+              <div className="input-row">
+                <div className="input-group">
+                  <label>列表筛选</label>
+                  <select value={benchSplitFilter} onChange={(e) => setBenchSplitFilter(e.target.value)}>
+                    <option value="">全部</option>
+                    <option value="train">train</option>
+                    <option value="test">test</option>
+                  </select>
+                </div>
+              </div>
+              <p className="empty-msg">还没有待保存截图。按 Ctrl+Alt+1/2 或点「截图」。</p>
+            </>
+          )}
+
+          {benchSamples.length > 0 && (
             <div className="dataset-list">
-              {datasetSamples.map((sample, i) => (
+              {benchSamples.map((sample) => (
                 <button
                   key={sample.id}
                   type="button"
-                  className={i === datasetIndex ? 'dataset-list-item selected' : 'dataset-list-item'}
-                  onClick={() => setDatasetIndex(i)}
+                  className={sample.id === benchSampleId ? 'dataset-list-item selected' : 'dataset-list-item'}
+                  onClick={() => setBenchSampleId(sample.id)}
                 >
-                  <span className="dataset-list-index">{i + 1}</span>
+                  <span className="dataset-list-index">{sample.verdict || (sample.human_label === 'allow' || sample.human_label === 'on_task' ? '对' : '错')}</span>
                   <span className="dataset-list-main">
-                    <span>{sample.distraction_label}{sample.reviewed ? ' · reviewed' : ' · unreviewed'}</span>
-                    <span>{getDatasetSampleTags(sample).join(', ') || '未设置任务标签'} · {sample.activity || sample.task || 'unspecified'}</span>
+                    <span>{sample.mode} · {sample.human_label} · {sample.split}</span>
+                    <span>{sample.task || sample.ai_activity || sample.human_reason || '—'}</span>
                   </span>
-                  <span className="dataset-list-time">{new Date(sample.captured_at).toLocaleTimeString()}</span>
+                  <span className="dataset-list-time">{sample.added_at ? new Date(sample.added_at).toLocaleTimeString() : ''}</span>
                 </button>
               ))}
             </div>
           )}
 
-          {currentDatasetSample ? (
+          {!pendingCapture && currentBenchSample && (
             <div className="dataset-layout">
               <div className="dataset-preview">
-                <img src={getDatasetImageUrl(currentDatasetSample)} alt="Dataset screenshot preview" />
+                <img src={getPersonalBenchSampleImageUrl(currentBenchSample)} alt="Bench screenshot" />
               </div>
               <div className="dataset-editor">
                 <div className="history-meta">
-                  <span>{datasetIndex + 1} / {datasetSamples.length}</span>
-                  <span>{new Date(currentDatasetSample.captured_at).toLocaleString()}</span>
+                  <span>{currentBenchSample.mode} / {currentBenchSample.split}</span>
+                  <span>{currentBenchSample.added_at ? new Date(currentBenchSample.added_at).toLocaleString() : ''}</span>
                 </div>
-                <div className="info-item"><span className="label">任务</span><span className="value">{currentDatasetSample.task}</span></div>
-                <div className="info-item"><span className="label">当前标签</span><span className="value">{currentDatasetSample.distraction_label}</span></div>
-                <div className="dataset-editor-group">
-                  <label>分心标签</label>
-                  <div className="label-button-row compact">
-                    <button className={labelButtonClass('on_task')} onClick={() => updateCurrentDatasetLabel('on_task')}>1 on_task</button>
-                    <button className={labelButtonClass('off_task')} onClick={() => updateCurrentDatasetLabel('off_task')}>2 off_task</button>
-                    <button className={labelButtonClass('ambiguous')} onClick={() => updateCurrentDatasetLabel('ambiguous')}>3 ambiguous</button>
-                    <button className={labelButtonClass('unlabeled')} onClick={() => updateCurrentDatasetLabel('unlabeled')}>unlabeled</button>
-                  </div>
-                </div>
-                <div className="dataset-editor-group">
-                  <label>任务标签</label>
-                  <div className="dataset-tag-row">
-                    {datasetTagOptions.map((tag) => {
-                      const active = getDatasetSampleTags(currentDatasetSample).some((item) => item.toLowerCase() === tag.toLowerCase())
-                      return (
-                        <button
-                          key={tag}
-                          type="button"
-                          className={active ? 'tag-chip active' : 'tag-chip'}
-                          onClick={() => toggleCurrentDatasetTag(tag)}
-                        >
-                          {tag}
-                        </button>
-                      )
-                    })}
-                  </div>
-                </div>
-                <div className="input-group">
-                  <label>画面/行为描述</label>
-                  <input
-                    id="dataset-activity"
-                    value={datasetActivity}
-                    onChange={(e) => setDatasetActivity(e.target.value)}
-                    placeholder="例如：读论文 / 看小说 / 写代码 / 查资料"
-                  />
-                </div>
-                <div className="input-group">
-                  <label>备注/判断理由</label>
-                  <textarea
-                    id="dataset-notes"
-                    value={datasetNotes}
-                    onChange={(e) => setDatasetNotes(e.target.value)}
-                    placeholder="例如：边界情况、为什么这样标、需要之后复核的点"
-                  />
-                </div>
-                <div className="dataset-nav-row">
-                  <button className="btn-secondary" onClick={() => setDatasetIndex((i) => Math.max(0, i - 1))}>上一张</button>
-                  <button className="btn-secondary" onClick={() => setDatasetIndex((i) => Math.min(datasetSamples.length - 1, i + 1))}>下一张</button>
-                </div>
+                <div className="info-item"><span className="label">判定</span><span className="value">{currentBenchSample.verdict || '—'} → {currentBenchSample.human_label}</span></div>
+                <div className="info-item"><span className="label">task</span><span className="value">{currentBenchSample.task || '—'}</span></div>
+                <div className="info-item"><span className="label">activity</span><span className="value">{currentBenchSample.ai_activity || '—'}</span></div>
+                <div className="info-item"><span className="label">note</span><span className="value">{currentBenchSample.human_reason || '—'}</span></div>
                 <div className="dataset-action-grid">
-                  <button className="btn-start" onClick={saveCurrentDatasetSample}>保存</button>
-                  <button className="btn-secondary" onClick={toggleCurrentReviewed}>{currentDatasetSample.reviewed ? '取消 reviewed' : '标记 reviewed'}</button>
-                  <button className="btn-secondary" onClick={() => openDatasetFolder(currentDatasetSample.id).catch((e) => setDatasetStatus(e.message || '打开文件夹失败'))}>打开截图文件夹</button>
-                  <button className="btn-stop" onClick={deleteCurrentDatasetSample}>删除样本</button>
+                  <button
+                    className="btn-secondary"
+                    onClick={() => moveBenchSample(currentBenchSample.split === 'train' ? 'test' : 'train')}
+                  >
+                    移到 {currentBenchSample.split === 'train' ? 'test' : 'train'}
+                  </button>
+                  <button className="btn-stop" onClick={deleteBenchSample}>删除样本</button>
                 </div>
-                {currentDatasetSample.ai_model && (
-                  <p className="settings-current">AI: {currentDatasetSample.ai_model} · {currentDatasetSample.ai_confidence ?? '--'}</p>
-                )}
               </div>
             </div>
-          ) : (
-            <p className="empty-msg">暂无样本。可以用 Ctrl+Alt+1/2/3/0 或上方按钮快速截图。</p>
           )}
 
-          <div className="button-row dataset-bottom-actions">
-            <button className="btn-secondary" onClick={handleDatasetExport}>导出 JSONL</button>
-            <button className="btn-secondary" onClick={() => openDatasetFolder().catch((e) => setDatasetStatus(e.message || '打开文件夹失败'))}>打开数据集文件夹</button>
-          </div>
           {datasetStatus && <p className="settings-status">{datasetStatus}</p>}
         </section>
       )}
@@ -1254,6 +1578,28 @@ function App() {
             </p>
           </div>
           <div className="strict-box">
+            <h3>Practice questions</h3>
+            <div className="input-row">
+              <div className="input-group">
+                <label>目标语言</label>
+                <input
+                  type="text"
+                  value={practiceTargetLanguage}
+                  onChange={(e) => setPracticeTargetLanguage(e.target.value)}
+                  placeholder="Japanese / Chinese / English"
+                />
+              </div>
+              <div className="input-group">
+                <label>上传 md/txt 题库</label>
+                <input type="file" accept=".md,.txt,text/markdown,text/plain" onChange={handlePracticeUpload} />
+              </div>
+            </div>
+            <p className="settings-current">
+              当前题库：{practiceStatus?.source_name || '--'} · {practiceStatus?.item_count ?? 0} 条 · 下一题 #{(practiceStatus?.next_index ?? 0) + 1}
+            </p>
+            {practiceUploadStatus && <p className="settings-status">{practiceUploadStatus}</p>}
+          </div>
+          <div className="strict-box">
             <h3>Guardian mode</h3>
             <label className="check-row">
               <input
@@ -1266,6 +1612,26 @@ function App() {
             <div className="input-group">
               <label>Guardian 检测间隔（秒）</label>
               <input type="number" value={guardianInterval} onChange={(e) => setGuardianInterval(e.target.value)} min="30" step="1" />
+            </div>
+            <div className="input-row">
+              <div className="input-group">
+                <label>每日娱乐额度（分钟）</label>
+                <input
+                  type="number"
+                  value={guardianDailyEntertainmentLimit}
+                  onChange={(e) => setGuardianDailyEntertainmentLimit(e.target.value)}
+                  min="0"
+                  step="1"
+                />
+              </div>
+              <div className="input-group">
+                <label>新一天开始时间</label>
+                <input
+                  type="time"
+                  value={guardianDayStartTime}
+                  onChange={(e) => setGuardianDayStartTime(e.target.value)}
+                />
+              </div>
             </div>
             <p className="settings-current">
               Guardian mode 独立于 Session，常驻检测明显娱乐行为：小说、游戏、漫画、色情内容。

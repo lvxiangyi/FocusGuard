@@ -1,5 +1,6 @@
 import os
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -99,3 +100,37 @@ class ReportTests(unittest.TestCase):
         self.assertEqual(report["total_blocks"], 2)
         self.assertEqual(report["completed_blocks"], 1)
         self.assertEqual(report["total_focus_minutes"], 20)
+
+
+class SessionOverlayPauseTests(unittest.TestCase):
+    def test_remaining_seconds_frozen_while_blocked(self):
+        manager = SessionManager()
+        manager.active = True
+        manager.duration_minutes = 1
+        manager.start_time = time.time() - 10
+        manager.should_block = True
+
+        self.assertTrue(manager._sync_overlay_pause())
+        first = manager.get_remaining_seconds()
+        time.sleep(0.3)
+        second = manager.get_remaining_seconds()
+        self.assertEqual(first, second)
+        self.assertGreater(first, 0)
+
+        manager.should_block = False
+        with patch("session_manager.blocker") as overlay:
+            overlay.is_showing = False
+            self.assertFalse(manager._sync_overlay_pause())
+        self.assertAlmostEqual(first, manager.get_remaining_seconds(), delta=1)
+
+    def test_pause_keeps_remaining_above_zero_during_overlay(self):
+        manager = SessionManager()
+        manager.active = True
+        manager.duration_minutes = 1
+        manager.start_time = time.time() - 50
+        manager.should_block = True
+        manager._sync_overlay_pause()
+        time.sleep(0.2)
+        remaining = manager.get_remaining_seconds()
+        self.assertGreaterEqual(remaining, 8)
+        self.assertLessEqual(remaining, 11)

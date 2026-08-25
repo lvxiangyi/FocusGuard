@@ -176,6 +176,7 @@ class BlockerWindow:
         self._content_frame = None
         self._result_label = None
         self._command_queue = queue.Queue()
+        self._unlock_reviews = []
         # Start persistent tkinter thread
         self._thread = threading.Thread(target=self._tk_thread, daemon=True)
         self._thread.start()
@@ -776,6 +777,14 @@ class BlockerWindow:
         for widget in self._content_frame.winfo_children():
             widget.destroy()
 
+    def _unlock_layout(self):
+        monitor_rect = _cursor_monitor_rect()
+        _, _, monitor_width, monitor_height = monitor_rect
+        content_width = min(max(int(monitor_width * 0.72), 1100), int(monitor_width * 0.9))
+        title_font = min(max(int(monitor_height * 0.022), 34), 52)
+        body_font = min(max(int(monitor_height * 0.014), 20), 28)
+        return content_width, title_font, body_font
+
     def _load_quiz(self, task, activity, reason):
         """Show loading state then fetch quiz in background."""
         self._clear_content()
@@ -824,6 +833,8 @@ class BlockerWindow:
         challenge_index=1,
     ):
         """Show loading state then fetch a strict-mode translation challenge."""
+        if int(challenge_index or 1) <= 1:
+            self._unlock_reviews = []
         self._clear_content()
         frame = self._content_frame
         tk.Label(
@@ -900,7 +911,6 @@ class BlockerWindow:
         source_font = min(max(int(monitor_height * 0.017), 26), 40)
         input_font = min(max(int(monitor_height * 0.014), 22), 32)
         answer_width = max(72, min(110, int(content_width / max(10, input_font * 0.58))))
-        final_challenge = int(challenge_index) >= max(1, int(challenge_total or 1))
 
         tk.Frame(frame, bg="#0f0f23", width=content_width, height=1).pack()
 
@@ -917,13 +927,28 @@ class BlockerWindow:
         tk.Label(frame, text=info, font=("Segoe UI", body_font), fg="#888", bg="#0f0f23").pack(pady=(0, 18))
         tk.Label(
             frame,
-            text="Translate the English sentence into Japanese. Romaji is accepted if IME is unavailable.",
+            text=challenge.get("instruction", "Translate the sentence."),
             font=("Segoe UI", body_font),
             fg="#cbd5e1",
             bg="#0f0f23",
             wraplength=content_width,
             justify="center",
         ).pack(pady=(0, 16))
+        source_name = challenge.get("source_name") or challenge.get("source") or "practice"
+        item_index = challenge.get("item_index")
+        item_total = challenge.get("item_total")
+        progress = ""
+        if isinstance(item_index, int) and item_total:
+            progress = f"  |  {item_index + 1}/{item_total}"
+        tk.Label(
+            frame,
+            text=f"Source: {source_name}{progress}",
+            font=("Segoe UI", max(12, body_font - 2)),
+            fg="#94a3b8",
+            bg="#0f0f23",
+            wraplength=content_width,
+            justify="center",
+        ).pack(pady=(0, 10))
         if nudge_message:
             tk.Label(
                 frame,
@@ -1023,77 +1048,160 @@ class BlockerWindow:
             command=self._correct_dismiss,
         ).pack(side="left")
 
-        if not final_challenge:
-            return
+        # Work / break choices appear on the review screen after all items pass.
 
+    def _show_unlock_complete(self, task, recovery, resume_payload, recovery_mode):
+        """After all translation items pass: show review, then work/break."""
+        self._clear_content()
+        frame = self._content_frame
+        content_width, title_font, body_font = self._unlock_layout()
+        wrap = max(640, content_width - 40)
+
+        tk.Label(
+            frame,
+            text="题目回顾",
+            font=("Segoe UI", title_font, "bold"),
+            fg="#ffffff",
+            bg="#0f0f23",
+        ).pack(pady=(0, 8))
+        tk.Label(
+            frame,
+            text="看完解析后，选择回到工作或开始休息。",
+            font=("Segoe UI", body_font),
+            fg="#cbd5e1",
+            bg="#0f0f23",
+        ).pack(pady=(0, 16))
+
+        review_box = tk.Frame(frame, bg="#15172a", padx=18, pady=14)
+        review_box.pack(fill="x", pady=(0, 16))
+        if not self._unlock_reviews:
+            tk.Label(
+                review_box,
+                text="没有可回顾的题目。",
+                font=("Segoe UI", body_font),
+                fg="#94a3b8",
+                bg="#15172a",
+            ).pack(anchor="w")
+        else:
+            for i, item in enumerate(self._unlock_reviews, start=1):
+                card = tk.Frame(review_box, bg="#15172a")
+                card.pack(fill="x", pady=(0, 14) if i < len(self._unlock_reviews) else 0)
+                tk.Label(
+                    card,
+                    text=f"{i}. {item.get('source_text') or ''}",
+                    font=("Segoe UI", body_font, "bold"),
+                    fg="#ffffff",
+                    bg="#15172a",
+                    wraplength=wrap,
+                    justify="left",
+                    anchor="w",
+                ).pack(anchor="w")
+                tk.Label(
+                    card,
+                    text=f"你的翻译：{item.get('user_answer') or ''}",
+                    font=("Segoe UI", max(16, body_font - 2)),
+                    fg="#94a3b8",
+                    bg="#15172a",
+                    wraplength=wrap,
+                    justify="left",
+                    anchor="w",
+                ).pack(anchor="w", pady=(4, 0))
+                if item.get("model_translation"):
+                    tk.Label(
+                        card,
+                        text=f"参考译文：{item.get('model_translation')}",
+                        font=("Segoe UI", max(16, body_font - 2)),
+                        fg="#2ecc71",
+                        bg="#15172a",
+                        wraplength=wrap,
+                        justify="left",
+                        anchor="w",
+                    ).pack(anchor="w", pady=(2, 0))
+                explain = (item.get("explanation") or item.get("feedback") or "").strip()
+                if explain:
+                    tk.Label(
+                        card,
+                        text=f"解析：{explain}",
+                        font=("Segoe UI", max(16, body_font - 2)),
+                        fg="#f1c40f",
+                        bg="#15172a",
+                        wraplength=wrap,
+                        justify="left",
+                        anchor="w",
+                    ).pack(anchor="w", pady=(2, 0))
+
+        unlock_widgets = []
         if resume_payload:
             resume_button = tk.Button(
                 frame,
-                text="翻訳後、次のタスク入力へ",
-                font=("Segoe UI", body_font, "bold"),
+                text="继续下一任务",
+                font=("Segoe UI", body_font + 2, "bold"),
                 fg="#0f0f23",
                 bg="#2ecc71",
                 activebackground="#27ae60",
                 activeforeground="#0f0f23",
                 relief="flat",
-                padx=26,
-                pady=12,
+                padx=40,
+                pady=16,
                 cursor="hand2",
-                state="disabled",
                 command=lambda: self._do_show_resume_prompt(resume_payload),
             )
-            resume_button.pack(pady=(14, 0))
-            unlock_widgets.append(resume_button)
+            resume_button.pack(pady=(8, 0))
         elif recovery:
-            self._render_recovery_choices(frame, task, unlock_widgets, recovery_mode=recovery_mode)
+            self._render_recovery_choices(
+                frame, task, unlock_widgets, recovery_mode=recovery_mode,
+                body_font=body_font, content_width=content_width,
+            )
+            for widget in unlock_widgets:
+                widget.config(state="normal")
         else:
-            close_button = tk.Button(
+            tk.Button(
                 frame,
                 text="回到工作",
-                font=("Segoe UI", body_font, "bold"),
+                font=("Segoe UI", body_font + 2, "bold"),
                 fg="#0f0f23",
                 bg="#2ecc71",
                 activebackground="#27ae60",
                 activeforeground="#0f0f23",
                 relief="flat",
-                padx=28,
-                pady=12,
+                padx=40,
+                pady=16,
                 cursor="hand2",
-                state="disabled",
                 command=self._correct_dismiss,
-            )
-            close_button.pack(pady=(14, 0))
-            unlock_widgets.append(close_button)
+            ).pack(pady=(8, 0))
 
-    def _render_recovery_choices(self, frame, task, unlock_widgets, recovery_mode="session"):
+    def _render_recovery_choices(self, frame, task, unlock_widgets, recovery_mode="session", body_font=None, content_width=None):
+        if body_font is None or content_width is None:
+            content_width, _, body_font = self._unlock_layout()
         is_guardian = recovery_mode == "guardian"
-        choice_box = tk.Frame(frame, bg="#15172a", padx=14, pady=12)
+        btn_font = body_font + 2
+        choice_box = tk.Frame(frame, bg="#15172a", padx=20, pady=18)
         choice_box.pack(fill="x", pady=(14, 0))
         tk.Label(
             choice_box,
-            text="三题都通过后，选择下一步。",
-            font=("Segoe UI", 11, "bold"),
+            text="选择下一步",
+            font=("Segoe UI", btn_font, "bold"),
             fg="#ffffff",
             bg="#15172a",
-        ).pack(anchor="w", pady=(0, 8))
+        ).pack(anchor="w", pady=(0, 12))
 
         step_entry = tk.Entry(
             choice_box,
-            font=("Segoe UI", 11),
+            font=("Segoe UI", body_font),
             bg="#0f0f23",
             fg="#ffffff",
             insertbackground="#ffffff",
             relief="flat",
         )
         step_entry.insert(0, "回到工作后的最小下一步" if is_guardian else f"{task} の最小の次の一歩")
-        step_entry.pack(fill="x", pady=(0, 8))
+        step_entry.pack(fill="x", ipady=8, pady=(0, 12))
 
         row = tk.Frame(choice_box, bg="#15172a")
-        row.pack(fill="x", pady=(0, 8))
-        tk.Label(row, text="休息分", font=("Segoe UI", 10), fg="#cbd5e1", bg="#15172a").pack(side="left")
+        row.pack(fill="x", pady=(0, 12))
+        tk.Label(row, text="休息分钟", font=("Segoe UI", body_font), fg="#cbd5e1", bg="#15172a").pack(side="left")
         break_minutes = tk.Entry(
             row,
-            font=("Segoe UI", 10),
+            font=("Segoe UI", body_font),
             width=8,
             bg="#0f0f23",
             fg="#ffffff",
@@ -1101,36 +1209,40 @@ class BlockerWindow:
             relief="flat",
         )
         break_minutes.insert(0, "10")
-        break_minutes.pack(side="left", padx=(8, 12))
+        break_minutes.pack(side="left", padx=(12, 16), ipady=6)
 
-        error_label = tk.Label(choice_box, text="", font=("Segoe UI", 10), fg="#ff8a80", bg="#15172a", wraplength=680)
-        error_label.pack(fill="x", pady=(0, 8))
+        error_label = tk.Label(choice_box, text="", font=("Segoe UI", max(16, body_font - 2)), fg="#ff8a80", bg="#15172a", wraplength=max(640, content_width - 40))
+        error_label.pack(fill="x", pady=(0, 12))
 
         action_row = tk.Frame(choice_box, bg="#15172a")
         action_row.pack(fill="x")
         work_button = tk.Button(
             action_row,
             text="回到工作",
-            font=("Segoe UI", 10, "bold"),
-            fg="#ffffff",
+            font=("Segoe UI", btn_font, "bold"),
+            fg="#0f0f23",
             bg="#2ecc71",
+            activebackground="#27ae60",
+            activeforeground="#0f0f23",
             relief="flat",
-            padx=16,
-            pady=7,
+            padx=36,
+            pady=16,
             cursor="hand2",
             state="disabled",
             command=lambda: self._submit_recovery_work(step_entry, error_label, recovery_mode),
         )
-        work_button.pack(side="left", padx=(0, 10))
+        work_button.pack(side="left", padx=(0, 16))
         break_button = tk.Button(
             action_row,
             text="开始休息",
-            font=("Segoe UI", 10, "bold"),
+            font=("Segoe UI", btn_font, "bold"),
             fg="#ffffff",
             bg="#4a9eff",
+            activebackground="#2f80ed",
+            activeforeground="#ffffff",
             relief="flat",
-            padx=16,
-            pady=7,
+            padx=36,
+            pady=16,
             cursor="hand2",
             state="disabled",
             command=lambda: self._submit_recovery_break(break_minutes, step_entry, error_label, recovery_mode),
@@ -1213,11 +1325,25 @@ class BlockerWindow:
                     "challenge_id": challenge.get("challenge_id", ""),
                     "source_text": challenge.get("source_text", ""),
                     "user_answer": answer,
+                    "source": challenge.get("source", ""),
+                    "source_name": challenge.get("source_name", ""),
+                    "item_index": challenge.get("item_index"),
+                    "item_total": challenge.get("item_total"),
+                    "target_language": challenge.get("target_language", ""),
                 },
                 timeout=30,
             )
             result = res.json()
+            review_item = {
+                "source_text": challenge.get("source_text", ""),
+                "user_answer": answer,
+                "feedback": result.get("feedback", ""),
+                "explanation": result.get("explanation") or result.get("feedback", ""),
+                "model_translation": result.get("model_translation") or "",
+                "accepted": bool(result.get("accepted")),
+            }
             if result.get("accepted"):
+                self._unlock_reviews.append(review_item)
                 feedback = result.get("feedback", "OK")
                 if int(challenge_index) < max(1, int(challenge_total or 1)):
                     self._command_queue.put(lambda: result_lbl.config(text=f"PASS: {feedback}\n下一题加载中...", fg="#2ecc71"))
@@ -1238,12 +1364,17 @@ class BlockerWindow:
                         )
                     )
                 else:
-                    self._command_queue.put(lambda: result_lbl.config(text=f"PASS: {feedback}", fg="#2ecc71"))
-                    for widget in unlock_widgets:
-                        self._command_queue.put(lambda w=widget: w.config(state="normal"))
+                    self._command_queue.put(
+                        lambda: self._show_unlock_complete(
+                            task, recovery, resume_payload, recovery_mode
+                        )
+                    )
             else:
                 feedback = result.get("feedback", "もう一度翻訳してください。")
-                self._command_queue.put(lambda: result_lbl.config(text=f"RETRY: {feedback}", fg="#e74c3c"))
+                explanation = result.get("explanation") or feedback
+                self._command_queue.put(
+                    lambda: result_lbl.config(text=f"RETRY: {feedback}\n{explanation}", fg="#e74c3c")
+                )
         except Exception as e:
             self._command_queue.put(lambda: result_lbl.config(text=f"Grade failed: {e}", fg="#e74c3c"))
 
@@ -1342,9 +1473,7 @@ class BlockerWindow:
         explanation = quiz.get("explanation", "")
 
         if selected_idx == correct_idx:
-            self._result_label.config(text=f"\u2705 \u6b63\u89e3\uff01 {explanation}", fg="#2ecc71")
-            # Hide after 1.5s
-            self._root.after(1500, self._correct_dismiss)
+            self._show_quiz_review(quiz, task, selected_idx, correct_idx, passed=True)
         else:
             user_ans = options[selected_idx] if selected_idx < len(options) else "?"
             correct_ans = options[correct_idx] if correct_idx < len(options) else "?"
@@ -1352,14 +1481,83 @@ class BlockerWindow:
                 text=f"\u274c \u4e0d\u6b63\u89e3\u3002\u6b63\u89e3\u306f\u300c{correct_ans}\u300d\u3002{explanation}\n\n\u6b21\u306e\u554f\u984c\u3078...",
                 fg="#e74c3c",
             )
-            # Record wrong
             threading.Thread(
                 target=self._record_wrong,
                 args=(quiz.get("question", ""), user_ans, correct_ans, task),
                 daemon=True,
             ).start()
-            # New question after 3s
-            self._root.after(3000, lambda: self._load_quiz(task, "", ""))
+            self._root.after(4000, lambda: self._load_quiz(task, "", ""))
+
+    def _show_quiz_review(self, quiz, task, selected_idx, correct_idx, passed=True):
+        """Keep the question on screen with AI explanation, then a large continue button."""
+        self._clear_content()
+        frame = self._content_frame
+        content_width, title_font, body_font = self._unlock_layout()
+        wrap = max(640, content_width - 40)
+        options = quiz.get("options", [])
+        labels = ["A", "B", "C", "D"]
+        correct_ans = options[correct_idx] if correct_idx < len(options) else "?"
+        user_ans = options[selected_idx] if selected_idx < len(options) else "?"
+        explanation = (quiz.get("explanation") or "").strip()
+
+        tk.Label(
+            frame,
+            text="题目回顾",
+            font=("Segoe UI", title_font, "bold"),
+            fg="#ffffff",
+            bg="#0f0f23",
+        ).pack(pady=(0, 10))
+        tk.Label(
+            frame,
+            text=quiz.get("question", ""),
+            font=("Segoe UI", body_font, "bold"),
+            fg="#ffffff",
+            bg="#0f0f23",
+            wraplength=wrap,
+            justify="left",
+        ).pack(anchor="w", pady=(0, 12))
+        tk.Label(
+            frame,
+            text=f"你的答案：{labels[selected_idx] if selected_idx < 4 else '?'}. {user_ans}",
+            font=("Segoe UI", body_font),
+            fg="#94a3b8",
+            bg="#0f0f23",
+            wraplength=wrap,
+            justify="left",
+        ).pack(anchor="w")
+        tk.Label(
+            frame,
+            text=f"正解：{labels[correct_idx] if correct_idx < 4 else '?'}. {correct_ans}",
+            font=("Segoe UI", body_font),
+            fg="#2ecc71",
+            bg="#0f0f23",
+            wraplength=wrap,
+            justify="left",
+        ).pack(anchor="w", pady=(4, 8))
+        if explanation:
+            tk.Label(
+                frame,
+                text=f"解析：{explanation}",
+                font=("Segoe UI", body_font),
+                fg="#f1c40f",
+                bg="#0f0f23",
+                wraplength=wrap,
+                justify="left",
+            ).pack(anchor="w", pady=(0, 20))
+        tk.Button(
+            frame,
+            text="回到工作",
+            font=("Segoe UI", body_font + 2, "bold"),
+            fg="#0f0f23",
+            bg="#2ecc71",
+            activebackground="#27ae60",
+            activeforeground="#0f0f23",
+            relief="flat",
+            padx=40,
+            pady=16,
+            cursor="hand2",
+            command=self._correct_dismiss,
+        ).pack(pady=(8, 0))
 
     def _correct_dismiss(self):
         """Correct answer: hide and acknowledge."""
