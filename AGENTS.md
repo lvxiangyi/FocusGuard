@@ -173,10 +173,10 @@ data/personal_bench/
 
 | 文件 | 用途 |
 |---|---|
-| `index.html` | 专注、实时状态、拦截答题、个人案例和偏好设置的语义化页面及弹窗入口。 |
-| `styles.css` | 深蓝侧栏与浅色工作区视觉样式、计时环、响应式布局及键盘焦点样式。 |
+| `index.html` | 专注主页、独立最近判定页、拦截答题、个人案例和偏好设置的页面及弹窗入口。 |
+| `styles.css` | 固定桌面导航和顶底栏、独立工作区滚动、自适应计时环及响应式和键盘焦点样式。 |
 | `app.js` | 六种界面/翻译目标语言独立切换、句子翻译与解析、模拟计时和拦截、保留任务归属的案例管理（保存不解锁）。 |
-| `README.md` | 演示范围、使用方式、模拟行为限制和 `mvp-demo-v1.1.0` 版本回溯及行为核对说明。 |
+| `README.md` | 演示范围、使用方式、模拟行为限制和 `mvp-demo-v1.2.0` 版本回溯、桌面布局及行为核对说明。 |
 
 ### 根目录脚本 / 配置文件
 
@@ -206,3 +206,5 @@ data/personal_bench/
 - 2026-09-06 新增收紧功能边界的 MVP HTML 交互演示，包含六语界面/答题、专注状态、拦截和个人案例纠正，版本 `mvp-demo-v1.0.0`；涉及 docs/demos/mvp-v1/index.html、styles.css、app.js、README.md。
 
 - 2026-09-06 修订 MVP demo 为句子翻译，纠正案例保存即解锁、历史任务归属、普通纠错暂停及模拟引用数量问题；保留旧标签，新增 `mvp-demo-v1.1.0`，涉及 docs/demos/mvp-v1/index.html、app.js、README.md。
+
+- 2026-09-06 将 MVP 最近判定迁移至独立页面并收紧主页为桌面工作区，新增版本 mvp-demo-v1.2.0；涉及 docs/demos/mvp-v1/index.html、styles.css、README.md。
