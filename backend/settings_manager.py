@@ -36,6 +36,11 @@ MODEL_OPTIONS: List[Dict[str, str]] = [
         "description": "经 OpenRouter 调用。便宜，但可能被隐私策略拦住。",
     },
     {
+        "id": "deepseek-v4-flash-vision-exp",
+        "label": "DeepSeek V4 Flash Vision（官方 API）",
+        "description": "直连 platform.deepseek.com。需要 DEEPSEEK_API_KEY。",
+    },
+    {
         "id": "google/gemini-2.5-flash-lite",
         "label": "Gemini 2.5 Flash-Lite（OpenRouter）",
         "description": "经 OpenRouter 调用。更快，国内有时地区不可用。",

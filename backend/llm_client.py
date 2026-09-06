@@ -42,6 +42,7 @@ MODEL_PROVIDER = {
     "qwen/qwen3.8-flash": "openrouter",
     "z-ai/glm-5.3-flash": "openrouter",
     "deepseek/deepseek-v4-flash-vision-exp": "openrouter",
+    "deepseek-v4-flash-vision-exp": "deepseek",
     "minimax/minimax-m3": "openrouter",
     "google/gemini-2.5-flash-lite": "openrouter",
     "openai/gpt-4o": "openrouter",
