@@ -392,7 +392,9 @@ def judge_screenshot(task: str, screenshot_path: str, memory: list = None, super
         return _api_error_result(task, error, model=model, error_kind="auth_error")
 
     memory_context = _format_memory_context(memory or [])
-    precedents = _personal_precedents_block("session", task=task, screenshot_path=screenshot_path)
+    from personal_bench.inject import format_precedents_block
+    hits = _retrieve_personal_hits("session", task=task, screenshot_path=screenshot_path)
+    precedents = format_precedents_block(hits, max_items=3)
 
     try:
         client = _get_client()
@@ -412,7 +414,7 @@ def judge_screenshot(task: str, screenshot_path: str, memory: list = None, super
                         supervision_level=supervision_level,
                         memory_context=memory_context,
                         precedents=precedents,
-                    ),
+                    ) + "\nWrite current_activity and reason in " + _ui_output_language() + ".",
                 },
                 {
                     "type": "image_url",
@@ -426,6 +428,7 @@ def judge_screenshot(task: str, screenshot_path: str, memory: list = None, super
         )
         result["model"] = model
         result["judgement_status"] = "ok"
+        result["personal_reference_count"] = min(3, len(hits))
         record_ai_success(model)
         return result
 
@@ -545,3 +548,9 @@ def evaluate_dispute(task: str, activity: str, original_reason: str, user_reason
     except Exception as e:
         print(f"[vision_judge] Dispute evaluation error: {e}")
         return {"accepted": True, "ai_reason": f"Error during evaluation, accepting dispute. ({e})"}
+
+
+def _ui_output_language():
+    from mvp_i18n import LANGUAGES
+    from settings_manager import load_settings
+    return LANGUAGES.get(load_settings().get("ui_language"), "Chinese")

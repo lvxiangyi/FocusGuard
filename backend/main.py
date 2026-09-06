@@ -58,9 +58,9 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def startup_event():
-    auto_scheduler.start()
-    guardian_manager.start()
-    asyncio.create_task(_replay_pending_flow_prompt())
+    # MVP: supervision only runs during a user-started Session.
+    # Preserve old data, but do not start hidden Guardian/Schedule/Flow work.
+    pass
 
 
 async def _replay_pending_flow_prompt():
@@ -107,6 +107,7 @@ class DisputeRequest(BaseModel):
 
 
 class SettingsRequest(BaseModel):
+    ui_language: Optional[str] = None
     model: Optional[str] = None
     strict_mode_enabled: Optional[bool] = None
     strict_locked_until: Optional[str] = None
@@ -210,7 +211,8 @@ async def start_session(req: StartSessionRequest):
                 else get_default_check_interval_seconds()
             ),
             tags=req.tags,
-            strict_mode=get_default_strict_mode() if req.strict_mode is None else req.strict_mode,
+            strict_mode=True,
+            supervision_level="task_related",
             trigger_threshold=req.trigger_threshold if req.trigger_threshold is not None else get_default_trigger_threshold(),
         )
     except ValueError as e:
@@ -247,7 +249,8 @@ async def get_status():
 
 @app.post("/session/acknowledge")
 async def acknowledge_block(req: AcknowledgeRequest):
-    session_manager.acknowledge_block()
+    if session_manager.should_block:
+        raise HTTPException(status_code=409, detail="Complete the current translation first")
     return {"status": "acknowledged"}
 
 
@@ -397,6 +400,7 @@ async def api_save_settings(req: SettingsRequest):
     try:
         update = req.dict(exclude_none=True)
         settings = save_settings(update)
+        session_manager.invalidate_judgement_cache()
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return {"settings": settings, "status": "saved"}
@@ -532,6 +536,8 @@ async def api_pending_capture_image():
 async def api_take_pending_capture(req: PersonalBenchPendingCaptureRequest):
     """Screenshot now. Context is filled later on the Dataset tab."""
     from personal_bench.capture_context import take_pending_capture
+    if session_manager.should_block:
+        raise HTTPException(409, "Use the correction action in the interruption window")
     try:
         pending = take_pending_capture(req.verdict)
     except Exception as e:
@@ -575,6 +581,8 @@ async def api_discard_pending_capture():
 async def api_personal_bench_hotkey_capture(req: PersonalBenchPendingCaptureRequest):
     """Electron global shortcut: screenshot first, keep as pending."""
     from personal_bench.capture_context import take_pending_capture
+    if session_manager.should_block:
+        raise HTTPException(409, "Use the correction action in the interruption window")
     try:
         pending = take_pending_capture(req.verdict)
     except Exception as e:
@@ -645,6 +653,7 @@ async def api_personal_bench_delete(sample_id: str):
     store = _personal_bench_store()
     if not store.delete_sample(sample_id):
         raise HTTPException(status_code=404, detail="Sample not found")
+    session_manager.invalidate_judgement_cache()
     return {"status": "deleted"}
 
 
@@ -1011,3 +1020,7 @@ async def test_block():
         )
     session_manager.should_block = True
     return {"status": "triggered"}
+
+
+from mvp_service import router as mvp_router
+app.include_router(mvp_router)

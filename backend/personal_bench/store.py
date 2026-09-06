@@ -5,12 +5,24 @@ import json
 import os
 import shutil
 import uuid
+import threading
+from functools import wraps
 from datetime import datetime
 from pathlib import Path
 from typing import Iterable, Optional
 
 from personal_bench.image_hash import average_hash_hex
 from personal_bench.schema import VALID_SPLITS, normalize_label_for_mode
+
+
+_STORE_LOCK = threading.RLock()
+
+def _locked(fn):
+    @wraps(fn)
+    def wrapped(*args, **kwargs):
+        with _STORE_LOCK:
+            return fn(*args, **kwargs)
+    return wrapped
 
 
 def default_bench_root() -> Path:
@@ -31,6 +43,7 @@ def _now() -> str:
 class BenchStore:
     """JSONL + screenshot files under data/{train,test}/."""
 
+    @_locked
     def __init__(self, root: Optional[Path] = None):
         self.root = Path(root) if root else default_bench_root()
         for split in VALID_SPLITS:
@@ -47,6 +60,7 @@ class BenchStore:
     def _samples_path(self, split: str) -> Path:
         return self._split_dir(split) / "samples.jsonl"
 
+    @_locked
     def list_samples(self, split: Optional[str] = None) -> list[dict]:
         splits = [split] if split else sorted(VALID_SPLITS)
         out: list[dict] = []
@@ -79,6 +93,7 @@ class BenchStore:
         rel = sample.get("screenshot_relpath") or f"screenshots/{sample['id']}.jpg"
         return (self._split_dir(split) / rel).resolve()
 
+    @_locked
     def add_sample(
         self,
         *,
@@ -144,6 +159,7 @@ class BenchStore:
             f.write(json.dumps(sample, ensure_ascii=False) + "\n")
         return sample
 
+    @_locked
     def delete_sample(self, sample_id: str, delete_image: bool = True) -> bool:
         found = None
         for split in VALID_SPLITS:
@@ -163,6 +179,7 @@ class BenchStore:
                 return True
         return False
 
+    @_locked
     def move_split(self, sample_id: str, new_split: str) -> dict:
         new_split = (new_split or "").strip().lower()
         if new_split not in VALID_SPLITS:

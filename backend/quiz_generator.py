@@ -26,6 +26,7 @@ def _llm_complete(messages, max_tokens: int):
         "model": model,
         "messages": messages,
         "max_tokens": max_tokens,
+        "timeout": 45,
     }
     extra = extra_body_for_model(model)
     if extra:
@@ -103,12 +104,12 @@ Source text:
 Target language:
 "{target_language}"
 
-Give a correct reference translation and a teaching explanation in Chinese.
+Give a correct reference translation and a teaching explanation in the requested feedback language.
 
 Return JSON only:
 {{
   "model_translation": "the full translation in {target_language}",
-  "explanation": "2-4 Chinese sentences: key words/grammar and why this translation is correct"
+  "explanation": "2-4 sentences: key words/grammar and why this translation is correct"
 }}
 """
 
@@ -454,18 +455,8 @@ def grade_translation_answer(
         return result
 
     if not has_api_key():
-        if target_language.lower() == "japanese":
-            accepted = (_looks_like_japanese(answer) and len(answer) >= 6) or _looks_like_romaji(answer, source_text)
-        else:
-            accepted = len(answer) >= 3 and answer.strip().lower() != (source_text or "").strip().lower()
-        result = {
-            "accepted": accepted,
-            "score": 0.7 if accepted else 0.2,
-            "feedback": "Accepted by local fallback." if accepted else f"Please enter a {target_language} translation.",
-            "model_translation": "",
-            "explanation": "Accepted by local fallback." if accepted else f"Please enter a {target_language} translation.",
-            "model": "local-fallback",
-        }
+        from mvp_i18n import text
+        result = {"accepted": False, "score": 0, "feedback": text("gradingError"), "explanation": text("gradingError"), "model": "api-error"}
         if challenge:
             record_translation_attempt(challenge, answer, result)
         return result
@@ -479,13 +470,15 @@ def grade_translation_answer(
                         source_text=source_text,
                         target_language=target_language,
                         user_answer=answer,
-                    ),
+                    ) + "\nWrite feedback and explanation in " + _feedback_language() + ".",
                 }
             ],
             350,
         )
 
         result = _parse_llm_json(response)
+        if not isinstance(result.get("accepted"), bool):
+            raise ValueError("Invalid grading result: accepted must be boolean")
         result["model"] = model
         result.setdefault("model_translation", "")
         result.setdefault("explanation", result.get("feedback", ""))
@@ -547,7 +540,7 @@ def explain_translation(
                     "content": TRANSLATION_EXPLAIN_PROMPT.format(
                         source_text=source_text,
                         target_language=target_language,
-                    ),
+                    ) + "\nWrite the explanation in " + _feedback_language() + ".",
                 }
             ],
             400,
@@ -556,6 +549,8 @@ def explain_translation(
         result["model"] = model
         result["model_translation"] = (parsed.get("model_translation") or "").strip()
         result["explanation"] = (parsed.get("explanation") or "").strip()
+        if not result["model_translation"]:
+            raise ValueError("Missing reference translation")
         if not result["explanation"]:
             result["explanation"] = "请对照参考译文，注意关键词和语序后再做下一题。"
     except Exception as e:
@@ -566,3 +561,9 @@ def explain_translation(
     if challenge:
         record_translation_attempt(challenge, "答不出来", result)
     return result
+
+
+def _feedback_language():
+    from mvp_i18n import LANGUAGES
+    from settings_manager import load_settings
+    return LANGUAGES.get(load_settings().get("ui_language"), "Chinese")

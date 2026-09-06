@@ -49,7 +49,7 @@ $env:RELEASE_DATE = $Date
 Push-Location $BackendDir
 try {
     Invoke-Checked "Run backend tests" { & ".\.venv\Scripts\python.exe" -m unittest discover -s tests }
-    Invoke-Checked "Build backend executable" { & ".\.venv\Scripts\pyinstaller.exe" "aimonitor-backend.spec" --noconfirm }
+    Invoke-Checked "Build backend executable" { & ".\.venv\Scripts\pyinstaller.exe" "run_backend.py" --name "aimonitor-backend" --onedir --add-data "ui_strings.json;." --collect-submodules uvicorn --noconfirm }
 }
 finally {
     Pop-Location

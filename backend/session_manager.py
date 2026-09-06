@@ -73,6 +73,9 @@ class SessionManager:
         self._paused_at: Optional[float] = None
         self.paused_for_rest: bool = False
         self._next_check_at: float = 0
+        self._cache_revision = 0
+        self.block_id = None
+        self.monitor_error = None
         self._last_screenshot_thumb = None
 
     def start_session(
@@ -102,7 +105,7 @@ class SessionManager:
         if trigger_threshold is not None and trigger_threshold <= 0:
             raise ValueError("Trigger threshold must be greater than 0.")
 
-        self._cancel_guardian_mode_state()
+        # Guardian does not run in the MVP profile.
 
         if self.active:
             self.stop_session(status="replaced")
@@ -133,8 +136,11 @@ class SessionManager:
         self._paused_at = None
         self.paused_for_rest = False
         self._next_check_at = 0
+        self._cache_revision = 0
+        self.block_id = None
+        self.monitor_error = None
         self._last_screenshot_thumb = None
-        self._pause_if_rest_active()
+        # MVP sessions do not inherit hidden Guardian rest state.
 
         # Start background monitoring loop
         self._loop_task = asyncio.create_task(self._monitor_loop())
@@ -227,23 +233,7 @@ class SessionManager:
                 print(f"[session] Could not remove completed schedule {self.schedule_id}: {e}")
         self._finalized = True
 
-        if notify:
-            try:
-                blocker.show_flow_prompt({
-                    "task": self.task,
-                    "duration_minutes": self.duration_minutes,
-                    "check_interval_seconds": self.check_interval_seconds,
-                    "tags": self.tags,
-                    "strict_mode": self.strict_mode,
-                    "trigger_threshold": self.trigger_threshold,
-                    "focus_minutes": block["focus_minutes"],
-                    "distracted_checks": distracted_checks,
-                    "api_error_checks": api_error_checks,
-                })
-            except Exception as e:
-                print(f"[session] End notification error (non-fatal): {e}")
-        else:
-            blocker.dismiss()
+        blocker.dismiss()
 
     def acknowledge_block(self):
         """User acknowledged the block overlay."""
@@ -377,6 +367,10 @@ class SessionManager:
         self._release_stale_rest_pause()
         return {
             "active": self.active,
+            "duration_minutes": self.duration_minutes,
+            "next_check_seconds": max(0, int(self._next_check_at - time.time())),
+            "monitor_error": self.monitor_error,
+            "block_id": self.block_id,
             "session_id": self.session_id,
             "task": self.task,
             "remaining_seconds": self.get_remaining_seconds(),
@@ -437,6 +431,10 @@ class SessionManager:
         payload["break_minutes"] = break_minutes
         return payload
 
+    def invalidate_judgement_cache(self):
+        self._cache_revision += 1
+        self._last_screenshot_thumb = None
+
     def _apply_judgement(self, result: dict) -> str:
         """Apply a judgement to streak/blocking state and return its status."""
         judgement_status = result.get("judgement_status", "ok")
@@ -450,6 +448,8 @@ class SessionManager:
             self.off_task_streak += 1
 
         if self.off_task_streak >= self.trigger_threshold:
+            if not self.should_block:
+                self.block_id = uuid.uuid4().hex
             self.should_block = True
 
         return judgement_status
@@ -474,6 +474,7 @@ class SessionManager:
                     await asyncio.sleep(1)
                     continue
 
+                cache_revision = self._cache_revision
                 # Take screenshot. Save each check to its own timestamped file:
                 # a shared latest.jpg would be overwritten next check and every
                 # historical log row would show the newest image.
@@ -481,20 +482,26 @@ class SessionManager:
                     screenshot_path, thumb = capture_screenshot(output_path=timestamped_screenshot_path())
                 except Exception as e:
                     print(f"[session] Screenshot error: {e}")
-                    await asyncio.sleep(self.check_interval_seconds)
+                    self.monitor_error = str(e)
+                    self._next_check_at = time.time() + self.check_interval_seconds
+                    await asyncio.sleep(min(self.check_interval_seconds, max(0.1, self.get_remaining_seconds())))
                     continue
 
                 if should_reuse_previous(self._last_screenshot_thumb, thumb, self.latest_judgement):
                     result = reused_judgement(self.latest_judgement)
                     print("[session] Screenshot nearly unchanged; reusing previous judgement.")
                 else:
-                    result = judge_screenshot(
-                        self.task,
+                    result = await asyncio.to_thread(
+                        judge_screenshot, self.task,
                         screenshot_path,
                         memory=self.dispute_memory,
                         supervision_level=self.supervision_level,
                     )
-                self._last_screenshot_thumb = thumb
+                if self.get_remaining_seconds() <= 0:
+                    self._finish_session(status="completed")
+                    break
+                self.monitor_error = None
+                self._last_screenshot_thumb = thumb if cache_revision == self._cache_revision else None
                 self.latest_judgement = result
                 judgement_status = self._apply_judgement(result)
 
@@ -550,13 +557,15 @@ class SessionManager:
                 if self._sync_overlay_pause():
                     await asyncio.sleep(1)
                     continue
-                await asyncio.sleep(self.check_interval_seconds)
+                self._next_check_at = time.time() + self.check_interval_seconds
+                await asyncio.sleep(min(self.check_interval_seconds, max(0.1, self.get_remaining_seconds())))
 
         except asyncio.CancelledError:
             print(f"[session] Session {self.session_id} cancelled.")
         except Exception as e:
             print(f"[session] Monitor loop error: {e}")
-            self.active = False
+            self.monitor_error = str(e)
+            self._finish_session(status="error")
 
 
 # Singleton session manager

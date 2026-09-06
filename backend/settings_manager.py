@@ -72,6 +72,7 @@ DEFAULT_NUDGE_PROMPT = (
 
 DEFAULT_SETTINGS = {
     "model": "qwen/qwen3.7-flash",
+    "ui_language": "zh",
     "strict_mode_enabled": True,
     "strict_locked_until": None,
     "supervision_level": "not_entertainment",
@@ -113,6 +114,9 @@ def load_settings() -> dict:
                 settings.update(saved)
         except Exception as e:
             print(f"[settings] Could not read settings, using defaults: {e}")
+
+    if settings.get("ui_language") not in {"zh", "en", "ja", "ko", "fr", "pt"}:
+        settings["ui_language"] = "zh"
 
     if settings.get("model") not in _valid_model_ids():
         settings["model"] = DEFAULT_SETTINGS["model"]
@@ -208,7 +212,7 @@ def load_settings() -> dict:
     settings["practice_source_path"] = practice_source_path
 
     target_language = str(settings.get("practice_target_language") or "").strip()
-    settings["practice_target_language"] = target_language[:80] if target_language else "Japanese"
+    settings["practice_target_language"] = target_language if target_language in {"Chinese", "English", "Japanese", "Korean", "French", "Portuguese"} else "Japanese"
 
     try:
         cooldown = int(settings.get(
@@ -234,6 +238,11 @@ def load_settings() -> dict:
 
 def save_settings(settings_update: dict) -> dict:
     settings = load_settings()
+
+    if "ui_language" in settings_update:
+        if settings_update["ui_language"] not in {"zh", "en", "ja", "ko", "fr", "pt"}:
+            raise ValueError("Unsupported interface language")
+        settings["ui_language"] = settings_update["ui_language"]
 
     if "model" in settings_update:
         model = settings_update["model"]
@@ -356,8 +365,8 @@ def save_settings(settings_update: dict) -> dict:
         value = str(settings_update["practice_target_language"] or "").strip()
         if not value:
             raise ValueError("Practice target language cannot be empty.")
-        if len(value) > 80:
-            raise ValueError("Practice target language cannot exceed 80 characters.")
+        if value not in {"Chinese", "English", "Japanese", "Korean", "French", "Portuguese"}:
+            raise ValueError("Unsupported translation target language")
         settings["practice_target_language"] = value
 
     if "post_block_cooldown_seconds" in settings_update:

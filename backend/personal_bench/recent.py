@@ -73,7 +73,7 @@ def _resolve_screenshot(data_root: Path, raw_path: str, mode: str) -> Optional[P
     return None
 
 
-def load_recent_judgments(limit: int = 10, data_root: Optional[Path] = None) -> list[dict]:
+def load_recent_judgments(limit: int = 10, data_root: Optional[Path] = None, mode: Optional[str] = None) -> list[dict]:
     """Merge guardian + session logs, newest first."""
     data_root = Path(data_root) if data_root else default_aimonitor_data_root()
     guardian_logs = _read_jsonl_tail(data_root / "guardian" / "guardian_logs.jsonl", limit * 3)
@@ -113,6 +113,7 @@ def load_recent_judgments(limit: int = 10, data_root: Optional[Path] = None) -> 
             {
                 "id": item_id,
                 "mode": "session",
+                "session_id": entry.get("session_id"),
                 "task": entry.get("task") or "",
                 "captured_at": captured,
                 "ai_activity": entry.get("current_activity") or "",
@@ -129,6 +130,6 @@ def load_recent_judgments(limit: int = 10, data_root: Optional[Path] = None) -> 
         )
 
     merged.sort(key=lambda x: x.get("captured_at") or "", reverse=True)
-    with_img = [m for m in merged if m["screenshot_available"]]
-    without = [m for m in merged if not m["screenshot_available"]]
-    return (with_img + without)[:limit]
+    if mode:
+        merged = [item for item in merged if item["mode"] == mode]
+    return merged[:limit]

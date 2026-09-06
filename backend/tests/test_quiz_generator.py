@@ -57,7 +57,8 @@ class PracticeQuestionTests(unittest.TestCase):
                 )
                 attempts = quiz_generator.get_practice_attempts()
 
-        self.assertTrue(result["accepted"])
+        self.assertFalse(result["accepted"])
+        self.assertEqual(result["model"], "api-error")
         self.assertIn("explanation", result)
         self.assertEqual(len(attempts), 1)
         self.assertEqual(attempts[0]["challenge_id"], "abc")

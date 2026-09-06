@@ -337,6 +337,11 @@ class BlockerWindow:
         self._root.lift()
         self._root.focus_force()
         self._grab_modal(global_grab=not strict_mode)
+        if recovery_mode == "session":
+            from mvp_blocker import MvpBlockerView
+            self._clear_content()
+            self._mvp_view = MvpBlockerView(self, BACKEND_URL, task, activity, reason, monitor_rect)
+            return
         if strict_mode:
             self._load_translation_unlock(
                 task,
@@ -814,6 +819,7 @@ class BlockerWindow:
 
     def _clear_content(self):
         """Clear all widgets from content frame."""
+        self._mvp_view = None
         self._unbind_review_input()
         for widget in self._content_frame.winfo_children():
             widget.destroy()

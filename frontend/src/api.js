@@ -18,7 +18,11 @@ function getApiBase() {
 const API_BASE = getApiBase();
 
 async function api(path, options) {
-  const res = await fetch(`${API_BASE}${path}`, options);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15000);
+  let res;
+  try { res = await fetch(`${API_BASE}${path}`, { ...options, signal: controller.signal }); }
+  finally { clearTimeout(timer); }
   if (!res.ok) {
     let detail = `${res.status} ${res.statusText}`;
     try {
@@ -304,3 +308,8 @@ export async function movePersonalBenchSample(sampleId, split) {
 export async function deletePersonalBenchSample(sampleId) {
   return api(`/personal-bench/samples/${encodeURIComponent(sampleId)}`, { method: 'DELETE' });
 }
+
+// MVP endpoints use server-owned record/challenge identities.
+export const mvpRequest = (path, payload) => api(`/mvp${path}`, payload === undefined ? undefined : {
+  method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload),
+});

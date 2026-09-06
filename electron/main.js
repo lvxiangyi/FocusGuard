@@ -179,8 +179,10 @@ npm run build</pre>
 
 function createWindow(port) {
   mainWindow = new BrowserWindow({
-    width: 820,
-    height: 750,
+    width: 1180,
+    minWidth: 960,
+    minHeight: 680,
+    height: 800,
     title: 'FocusGuard Agent',
     icon: path.join(__dirname, 'icon.png'),
     webPreferences: {
@@ -363,16 +365,18 @@ function registerDatasetShortcuts() {
         let result;
         if (existing && existing.pending) {
           result = await postJson('/personal-bench/pending-capture/verdict', { verdict });
-          notify('FocusGuard Data', `已标记：${verdict}（未重新截图，先到 Dataset 保存）`);
+          const locale = await getJson('/mvp/labels');
+          notify('FocusGuard', `${locale.pending} · ${verdict === '对' ? locale.onTask : locale.offTask}`);
         } else {
           result = await postJson('/personal-bench/pending-capture', { verdict });
           const pending = result && result.pending ? result.pending : {};
-          notify('FocusGuard Data', `已截图：${pending.verdict || verdict}。到 Dataset 填 context 后保存。`);
+          const locale = await getJson('/mvp/labels');
+          notify('FocusGuard', `${locale.pending} · ${verdict === '对' ? locale.onTask : locale.offTask}`);
         }
         refreshDatasetPending();
       } catch (e) {
         logError(`[dataset] Hotkey capture failed for ${verdict}:`, e);
-        notify('FocusGuard 截图失败', String(e.message || e));
+        notify('FocusGuard', String(e.message || e));
       }
     });
     if (!ok) {
