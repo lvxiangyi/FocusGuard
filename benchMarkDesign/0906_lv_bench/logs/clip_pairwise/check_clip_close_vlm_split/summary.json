@@ -1,0 +1,75 @@
+{
+  "n_pairs": 21,
+  "n_unique_images": 17,
+  "hub_images": [
+    [
+      "eaa1fff2-4e54-5189-b894-6d46d636db4e",
+      10
+    ],
+    [
+      "e3548dcc-9539-5c64-9769-8a543bacffd1",
+      8
+    ],
+    [
+      "8c0d8dba-5ca5-57d3-b833-d15dd082223e",
+      3
+    ],
+    [
+      "e308367d-523f-508c-ac1f-7f817ec62188",
+      3
+    ],
+    [
+      "82e251b1-4374-54d7-b5aa-60f5774d6a50",
+      2
+    ],
+    [
+      "e2da4cd4-88ce-57ef-b228-e44d2babaaaa",
+      2
+    ],
+    [
+      "3f304421-40f7-5a0f-88f9-15e514c25442",
+      2
+    ],
+    [
+      "c2c524d7-8d74-50f7-b4ef-3bb6b946ae82",
+      2
+    ],
+    [
+      "ad5aaf5f-5a17-5eb8-bc9a-f614539a3972",
+      2
+    ],
+    [
+      "7b731675-22bc-5aea-97b4-6e4257cc09e7",
+      1
+    ],
+    [
+      "37433e1f-7e78-52bb-af11-18977670613a",
+      1
+    ],
+    [
+      "94d26614-4322-5882-b6e9-83f76884af64",
+      1
+    ],
+    [
+      "5c742c5b-29ee-5b52-8d56-d342cffbf8ea",
+      1
+    ],
+    [
+      "710cf89d-f859-593e-a988-988f41bf6b0f",
+      1
+    ],
+    [
+      "7b53754b-34cb-5caa-bd5d-074bf0bff058",
+      1
+    ],
+    [
+      "aa018a39-834b-5c92-9d4d-7d262ab0a940",
+      1
+    ],
+    [
+      "9564681e-3740-56c4-aebb-e91bbe5e8984",
+      1
+    ]
+  ],
+  "html": "D:\\02_PersonalProj\\AImonitor\\benchMarkDesign\\0906_lv_bench\\logs\\clip_pairwise\\check_clip_close_vlm_split\\index.html"
+}

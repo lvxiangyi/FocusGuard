@@ -1,0 +1,5 @@
+# Isolated CLIP pairwise env only. Do not install into the FastAPI bench venv.
+# torch: pip install torch==2.4.1 --index-url https://download.pytorch.org/whl/cpu
+torch==2.4.1
+transformers==4.44.2
+pillow>=10.0

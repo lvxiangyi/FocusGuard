@@ -1,0 +1,56 @@
+{
+  "model": "openai/clip-vit-base-patch32",
+  "n_images": 37,
+  "n_pairs": 666,
+  "clip_mean_same_label": 0.701307,
+  "clip_mean_diff_label": 0.656111,
+  "phash_mean_same_label": 0.530006,
+  "phash_mean_diff_label": 0.513468,
+  "top5_clip": [
+    {
+      "a": "7b53754b",
+      "b": "8fae381b",
+      "clip": 0.965357,
+      "phash": 0.765625,
+      "same_label": 1,
+      "label_a": "ontask",
+      "label_b": "ontask"
+    },
+    {
+      "a": "7b731675",
+      "b": "94d26614",
+      "clip": 0.960521,
+      "phash": 0.765625,
+      "same_label": 1,
+      "label_a": "ontask",
+      "label_b": "ontask"
+    },
+    {
+      "a": "f543a490",
+      "b": "ffc8db33",
+      "clip": 0.951537,
+      "phash": 0.765625,
+      "same_label": 0,
+      "label_a": "ontask",
+      "label_b": "process"
+    },
+    {
+      "a": "446429a3",
+      "b": "61a4072b",
+      "clip": 0.941786,
+      "phash": 0.578125,
+      "same_label": 1,
+      "label_a": "ontask",
+      "label_b": "ontask"
+    },
+    {
+      "a": "3f304421",
+      "b": "f543a490",
+      "clip": 0.934213,
+      "phash": 0.78125,
+      "same_label": 1,
+      "label_a": "ontask",
+      "label_b": "ontask"
+    }
+  ]
+}

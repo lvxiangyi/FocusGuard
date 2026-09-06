@@ -1,0 +1,28 @@
+{
+  "phash_similarity": 0.7344,
+  "train": {
+    "role": "train",
+    "source_id": "821a192e-e25b-5b99-b812-a92e3c26ede7",
+    "source_split": "train",
+    "mode": "guardian",
+    "human_label": "entertainment",
+    "activity": "watching a youtube video",
+    "ai_label": "ontask",
+    "ai_reason": "The user is watching a YouTube video titled 'So I Played Expedition 33..'. This does not fall into any of the interrupt categories.",
+    "image_hash": "13031f08071707ff",
+    "image": "train_821a192e.jpg"
+  },
+  "probe": {
+    "role": "probe",
+    "source_id": "cace9eff-0bc6-5744-b39c-7c4d64f48c38",
+    "source_split": "train",
+    "mode": "guardian",
+    "human_label": "entertainment",
+    "activity": "Watching a YouTube video of someone playing a video game (Expedition 33)",
+    "ai_label": "ontask",
+    "ai_reason": "Allowed during Guardian entertainment time. Novels, manga/comics, and adult content still interrupt.",
+    "image_hash": "13631e4c797b01ff",
+    "image": "probe_cace9eff.jpg"
+  },
+  "note": "Two most similar YouTube screens from the current 0906 bench. Use train as calibration, probe as the live/test shot."
+}

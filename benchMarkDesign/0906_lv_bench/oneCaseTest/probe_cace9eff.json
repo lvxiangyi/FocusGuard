@@ -1,0 +1,12 @@
+{
+  "role": "probe",
+  "source_id": "cace9eff-0bc6-5744-b39c-7c4d64f48c38",
+  "source_split": "train",
+  "mode": "guardian",
+  "human_label": "entertainment",
+  "activity": "Watching a YouTube video of someone playing a video game (Expedition 33)",
+  "ai_label": "ontask",
+  "ai_reason": "Allowed during Guardian entertainment time. Novels, manga/comics, and adult content still interrupt.",
+  "image_hash": "13631e4c797b01ff",
+  "image": "probe_cace9eff.jpg"
+}

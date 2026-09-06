@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FocusGuard Screenshot Benchmark</title>
+  <style>
+    :root { color-scheme: dark; --bg:#0b0e14; --panel:#151a24; --line:#293245; --muted:#91a0b8; --text:#edf2fa; --blue:#4a8eff; --green:#26b56f; --red:#dc5664; }
+    * { box-sizing:border-box; }
+    body { margin:0; min-height:100vh; background:linear-gradient(145deg,#0b0e14,#111827); color:var(--text); font:14px/1.45 "Segoe UI","Microsoft YaHei",sans-serif; }
+    header { display:flex; align-items:flex-end; justify-content:space-between; gap:20px; padding:18px 22px 12px; border-bottom:1px solid var(--line); }
+    h1 { margin:0; font-size:21px; } h2 { margin:0 0 12px; font-size:15px; } p { margin:4px 0; }
+    .muted,.status { color:var(--muted); } .status.error { color:#ff8994; }
+    .stats { display:flex; gap:8px; flex-wrap:wrap; } .pill { padding:3px 9px; border:1px solid var(--line); border-radius:99px; background:#1d2636; font-size:12px; }
+    .tabs { display:flex; gap:8px; padding:10px 14px 0; }
+    .tab { min-width:110px; background:#20293a; color:var(--muted); border:1px solid var(--line); }
+    .tab.active { color:#fff; background:var(--blue); border-color:var(--blue); }
+    main { display:grid; gap:14px; padding:14px; height:calc(100vh - 130px); }
+    main.view-mode { grid-template-columns:minmax(520px,1fr) 370px; }
+    main.capture-mode { grid-template-columns:360px minmax(520px,1fr); }
+    .panel { min-height:0; overflow:auto; padding:14px; border:1px solid var(--line); border-radius:12px; background:var(--panel); }
+    label { display:block; margin:9px 0 4px; color:var(--muted); font-size:12px; }
+    input,select,textarea,button { font:inherit; }
+    input,select,textarea { width:100%; padding:8px 9px; border:1px solid var(--line); border-radius:7px; background:#0d121b; color:var(--text); }
+    textarea { min-height:60px; resize:vertical; }
+    button { padding:8px 11px; border:0; border-radius:7px; background:var(--blue); color:white; font-weight:600; cursor:pointer; }
+    button.secondary { background:#2b3548; } button.danger { background:var(--red); } button.good { background:var(--green); }
+    button:disabled { opacity:.48; cursor:not-allowed; }
+    .row { display:flex; gap:7px; flex-wrap:wrap; margin-top:10px; } .row > * { flex:1; }
+    .advanced { margin-top:12px; border-top:1px solid var(--line); padding-top:8px; }
+    .capture-box { min-height:280px; display:grid; place-items:center; border:1px dashed #39465e; border-radius:10px; background:#090c12; overflow:auto; }
+    .capture-box img { display:block; width:100%; max-height:62vh; object-fit:contain; }
+    .context { margin-top:12px; border-top:1px solid var(--line); padding-top:10px; }
+    .context table { width:100%; border-collapse:collapse; } .context th,.context td { padding:5px 7px; border-bottom:1px solid #222b3b; text-align:left; vertical-align:top; word-break:break-word; }
+    .context th { width:175px; color:var(--muted); font-weight:500; }
+    .view-editor { margin-top:14px; padding-top:12px; border-top:1px solid var(--line); }
+    .editor-grid { display:grid; grid-template-columns:1fr 1fr; gap:0 10px; }
+    .editor-grid .wide { grid-column:1/-1; }
+    .toolbar { display:grid; grid-template-columns:1fr 1fr; gap:7px; margin-bottom:10px; }
+    .list { display:flex; flex-direction:column; gap:7px; }
+    .sample { width:100%; padding:8px; text-align:left; border:1px solid var(--line); background:#0e1420; }
+    .sample.active { border-color:var(--blue); box-shadow:0 0 0 1px var(--blue); }
+    .sample img { width:100%; height:82px; object-fit:cover; border-radius:5px; background:#080b10; }
+    .sample-title { margin-top:6px; display:flex; gap:5px; flex-wrap:wrap; } .sample-meta { margin-top:4px; color:var(--muted); font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    [hidden] { display:none !important; }
+    @media (max-width:1100px) { main.view-mode,main.capture-mode { grid-template-columns:1fr; height:auto; } .panel { overflow:visible; } }
+  </style>
+</head>
+<body>
+  <header>
+    <div><h1>Screenshot Benchmark · 0906</h1><p class="muted">截图 → 填写 Context → 保存 → 立即进入 train/test 数据集</p></div>
+    <div class="stats"><span class="pill" id="stat-total">Total 0</span><span class="pill" id="stat-train">Train 0</span><span class="pill" id="stat-test">Test 0</span></div>
+  </header>
+  <nav class="tabs" aria-label="Benchmark sections">
+    <button class="tab active" id="tab-view" type="button">View</button>
+    <button class="tab" id="tab-capture" type="button">Capture</button>
+  </nav>
+  <main id="main" class="view-mode">
+    <section class="panel" id="capture-panel" hidden>
+      <h2>1 · 构造 Context</h2>
+      <label for="mode">模式</label><select id="mode"><option value="guardian">Guardian</option><option value="session">Session</option></select>
+      <label for="task">Session 任务</label><input id="task" placeholder="例如：观看 Transformer 教程">
+      <label for="activity">画面活动</label><input id="activity" placeholder="例如：YouTube 上的机器学习教程">
+      <label for="reason">人工判断理由</label><textarea id="reason" placeholder="为什么这个四档分类是对的？空着也可以。"></textarea>
+      <div class="row"><div><label for="split">数据用途</label><select id="split"><option value="train">train · 用于 RAG</option><option value="test">test · 只做 benchmark</option></select></div><div><label for="label">活动标签</label><select id="label"></select></div></div>
+      <p class="muted">ontask / process 不打断。entertainment 两种模式都打断。not_entertainment_but_notFocus 只在 Session 打断。</p>
+      <details class="advanced"><summary>版本与 AI 原判断</summary>
+        <label for="ai-label">AI 原标签</label><input id="ai-label">
+        <label for="ai-reason">AI 原理由</label><textarea id="ai-reason"></textarea>
+        <label for="ai-model">AI 模型</label><input id="ai-model">
+        <div class="row"><div><label for="prompt-version">Prompt 版本</label><input id="prompt-version"></div><div><label for="retriever-version">Retriever 版本</label><input id="retriever-version"></div></div>
+      </details>
+      <div class="row"><button id="capture">3 秒后截图</button><button class="good" id="save" disabled>保存到数据集</button><button class="secondary" id="discard" disabled>丢弃</button></div>
+      <p class="muted">点击截图后立即切换到目标窗口；倒计时结束时截取鼠标所在显示器。</p>
+      <p class="status" id="status">准备就绪。</p>
+    </section>
+
+    <section class="panel" id="preview-panel">
+      <h2 id="preview-title">截图与完整 Context</h2>
+      <div class="capture-box"><p class="muted" id="empty">先点击“截取当前屏幕”，或从右侧选择已有样本。</p><img id="preview" alt="benchmark screenshot" hidden></div>
+      <div class="context" id="context" hidden>
+        <table><tbody id="context-body"></tbody></table>
+        <div class="view-editor" id="view-editor" hidden>
+          <h2>修改当前样本</h2>
+          <div class="editor-grid">
+            <div><label for="edit-mode">mode</label><select id="edit-mode"><option value="guardian">guardian</option><option value="session">session</option></select></div>
+            <div><label for="edit-split">dataset role</label><select id="edit-split"><option value="train">calibration / train</option><option value="test">test</option></select></div>
+            <div><label for="edit-source-type">source type</label><select id="edit-source-type"><option value="manual_seed">manual_seed</option><option value="ai_correction">ai_correction</option><option value="history_import">history_import</option></select></div>
+            <div><label for="edit-review-status">review status</label><select id="edit-review-status"><option value="reviewed">reviewed</option><option value="pending">pending</option></select></div>
+            <div><label for="edit-label">activity / human label</label><select id="edit-label"></select></div>
+            <div class="wide"><label for="edit-task">task</label><input id="edit-task"></div>
+            <div class="wide"><label for="edit-activity">activity</label><input id="edit-activity"></div>
+            <div class="wide"><label for="edit-reason">human reason</label><textarea id="edit-reason"></textarea></div>
+            <div class="wide"><label for="edit-window-title">window title</label><input id="edit-window-title"></div>
+            <div><label for="edit-ai-label">AI original label</label><input id="edit-ai-label"></div>
+            <div><label for="edit-ai-model">AI model</label><input id="edit-ai-model"></div>
+            <div class="wide"><label for="edit-ai-reason">AI reason</label><textarea id="edit-ai-reason"></textarea></div>
+            <div><label for="edit-prompt-version">Prompt version</label><input id="edit-prompt-version"></div>
+            <div><label for="edit-retriever-version">Retriever version</label><input id="edit-retriever-version"></div>
+          </div>
+          <div class="row"><button class="good" id="save-edits">保存修改</button><button class="secondary" id="move"></button><button class="danger" id="delete">删除样本</button></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" id="list-panel">
+      <h2>Benchmark 数据</h2>
+      <div class="toolbar"><select id="filter-split"><option value="">全部 role</option><option value="train">calibration</option><option value="test">test</option></select><select id="filter-mode"><option value="">全部 mode</option><option value="guardian">guardian</option><option value="session">session</option></select><select id="filter-source"><option value="">全部 source</option><option value="manual_seed">manual_seed</option><option value="ai_correction">ai_correction</option><option value="history_import">history_import</option></select><select id="filter-review"><option value="">全部 review</option><option value="pending">pending</option><option value="reviewed">reviewed</option></select><button class="secondary" id="refresh">刷新</button><button class="secondary" id="import">导入 0825</button></div>
+      <div class="list" id="list"></div>
+    </section>
+  </main>
+  <script>
+    const $ = (id) => document.getElementById(id);
+    let samples = [], selectedId = null, hasPending = false, captureMeta = {}, activeTab = 'view';
+    const contextFields = ['dataset_role','source_type','review_status','mode','task','activity','human_reason','human_label','should_interrupt','split','window_title','ai_label','ai_reason','ai_model','ai_confidence','judgement_status','trigger_category','prompt_version','retriever_version','image_hash','captured_at','added_at','updated_at','source','source_screenshot_path','id','schema_version'];
+    const labels = ['ontask','process','entertainment','not_entertainment_but_notFocus','ambiguous'];
+    const legacyLabels = {allow:'ontask',interrupt:'entertainment',on_task:'ontask',off_task:'entertainment',offtask:'entertainment','off-task':'entertainment',task_related:'ontask',not_entertainment:'not_entertainment_but_notFocus'};
+
+    function setStatus(message, error=false) { $('status').textContent=message; $('status').className='status'+(error?' error':''); }
+    function setTab(tab) {
+      activeTab=tab==='capture'?'capture':'view';
+      $('tab-view').classList.toggle('active',activeTab==='view'); $('tab-capture').classList.toggle('active',activeTab==='capture');
+      $('capture-panel').hidden=activeTab!=='capture'; $('list-panel').hidden=activeTab!=='view';
+      $('main').className=activeTab==='view'?'view-mode':'capture-mode';
+      $('preview-title').textContent=activeTab==='view'?'View · 截图与完整 Context':'Capture · 截图预览与 Context';
+      location.hash=activeTab;
+      if(activeTab==='view'&&!selectedId&&samples.length) selectSample(samples[0].id);
+      if(activeTab==='capture'&&!hasPending) { $('preview').hidden=true; $('empty').hidden=false; $('empty').textContent='填写 Context 后点击“3 秒后截图”。'; $('context').hidden=true; }
+    }
+    function mapLabel(value) { return legacyLabels[value]||value||''; }
+    function preferredLabel(humanLabel, aiLabel) {
+      const human=mapLabel(humanLabel), ai=mapLabel(aiLabel);
+      if(human && human!=='ambiguous' && labels.includes(human)) return human;
+      if(ai && labels.includes(ai)) return ai;
+      return labels.includes(human)?human:'ambiguous';
+    }
+    function updateMode() {
+      const mode=$('mode').value; $('task').disabled=mode==='guardian'; if(mode==='guardian') $('task').value='';
+      fillOptions($('label'), labels, preferredLabel($('label').value,$('ai-label').value));
+    }
+    function fillOptions(select, values, selected) { select.replaceChildren(...values.map(value=>{ const option=document.createElement('option'); option.value=value; option.textContent=value; option.selected=value===selected; return option; })); }
+    function updateEditMode() { const mode=$('edit-mode').value; $('edit-task').disabled=mode==='guardian'; if(mode==='guardian') $('edit-task').value=''; fillOptions($('edit-label'),labels,preferredLabel($('edit-label').value,$('edit-ai-label').value)); }
+    function fillEditor(sample) { $('edit-mode').value=sample.mode; $('edit-split').value=sample.split; $('edit-source-type').value=sample.source_type||'manual_seed'; $('edit-review-status').value=sample.review_status||'reviewed'; $('edit-task').value=sample.task||''; $('edit-activity').value=sample.activity||''; $('edit-reason').value=sample.human_reason||''; $('edit-window-title').value=sample.window_title||''; $('edit-ai-label').value=mapLabel(sample.ai_label||''); $('edit-ai-reason').value=sample.ai_reason||''; $('edit-ai-model').value=sample.ai_model||''; $('edit-prompt-version').value=sample.prompt_version||''; $('edit-retriever-version').value=sample.retriever_version||''; updateEditMode(); $('edit-label').value=preferredLabel(sample.human_label,sample.ai_label); }
+    function editPayload() { const label=$('edit-label').value; return { mode:$('edit-mode').value, split:$('edit-split').value, source_type:$('edit-source-type').value, review_status:$('edit-review-status').value, human_label:label, supervision_level:label==='ambiguous'?null:label, task:$('edit-task').value, activity:$('edit-activity').value, human_reason:$('edit-reason').value, window_title:$('edit-window-title').value, ai_label:$('edit-ai-label').value, ai_reason:$('edit-ai-reason').value, ai_model:$('edit-ai-model').value, prompt_version:$('edit-prompt-version').value, retriever_version:$('edit-retriever-version').value }; }
+    function payload() { const label=$('label').value; return { mode:$('mode').value, task:$('task').value, supervision_level:label==='ambiguous'?null:label, activity:$('activity').value, human_reason:$('reason').value, split:$('split').value, human_label:label, ai_label:$('ai-label').value, ai_reason:$('ai-reason').value, ai_model:$('ai-model').value, prompt_version:$('prompt-version').value, retriever_version:$('retriever-version').value }; }
+    function showImage(url) { $('empty').hidden=true; $('preview').hidden=false; $('preview').src=url+(url.includes('?')?'&':'?')+'t='+Date.now(); }
+    function showContext(item, pending=false) {
+      $('context').hidden=false; const body=$('context-body'); body.replaceChildren();
+      const merged=pending ? {...payload(), window_title:captureMeta.window_title||'', source:'pending capture'} : item;
+      for(const key of contextFields) { if(merged[key]===undefined) continue; const tr=document.createElement('tr'), th=document.createElement('th'), td=document.createElement('td'); th.textContent=key; td.textContent=merged[key]===null||merged[key]===''?'—':String(merged[key]); tr.append(th,td); body.appendChild(tr); }
+      $('view-editor').hidden=pending; if(!pending) { fillEditor(item); $('move').textContent=`移到 ${item.split==='train'?'test':'train'}`; }
+    }
+    function fillContext(context) { $('mode').value=context.mode||'guardian'; $('task').value=context.task||''; $('activity').value=context.activity||''; $('reason').value=context.human_reason||''; $('split').value=context.split||'train'; $('ai-label').value=mapLabel(context.ai_label||''); $('ai-reason').value=context.ai_reason||''; $('ai-model').value=context.ai_model||''; $('prompt-version').value=context.prompt_version||''; $('retriever-version').value=context.retriever_version||''; updateMode(); $('label').value=preferredLabel('',context.ai_label||''); }
+    async function request(url, options) { const response=await fetch(url,options); const data=await response.json().catch(()=>({})); if(!response.ok) throw new Error(data.detail||`HTTP ${response.status}`); return data; }
+    async function loadHealth() { const h=await request('/api/health'); $('stat-total').textContent=`Total ${h.counts.total}`; $('stat-train').textContent=`Train ${h.counts.train}`; $('stat-test').textContent=`Test ${h.counts.test}`; }
+    async function loadSamples() {
+      const params=new URLSearchParams(); if($('filter-split').value) params.set('split',$('filter-split').value); if($('filter-mode').value) params.set('mode',$('filter-mode').value); if($('filter-source').value) params.set('source_type',$('filter-source').value); if($('filter-review').value) params.set('review_status',$('filter-review').value);
+      samples=(await request('/api/samples?'+params)).samples||[]; const list=$('list'); list.replaceChildren();
+      if(!samples.length) { const p=document.createElement('p'); p.className='muted'; p.textContent='还没有符合条件的样本。'; list.appendChild(p); }
+      for(const sample of samples) { const button=document.createElement('button'); button.className='sample'+(sample.id===selectedId?' active':''); const image=document.createElement('img'); image.src=sample.screenshot_url; image.loading='lazy'; const title=document.createElement('div'); title.className='sample-title'; for(const value of [sample.split,sample.mode,sample.human_label]) { const badge=document.createElement('span'); badge.className='pill'; badge.textContent=value; title.appendChild(badge); } const meta=document.createElement('div'); meta.className='sample-meta'; meta.textContent=sample.task||sample.activity||sample.human_reason||'(guardian)'; button.append(image,title,meta); button.onclick=()=>selectSample(sample.id); list.appendChild(button); }
+      await loadHealth();
+      if(activeTab==='view'&&!selectedId&&samples.length) selectSample(samples[0].id);
+    }
+    function selectSample(id) { const sample=samples.find(item=>item.id===id); if(!sample) return; selectedId=id; hasPending=false; captureMeta={}; $('save').disabled=true; $('discard').disabled=true; showImage(sample.screenshot_url); showContext(sample,false); document.querySelectorAll('.sample').forEach((el,index)=>el.classList.toggle('active',samples[index]?.id===id)); }
+    async function capture() {
+      const button=$('capture'); button.disabled=true;
+      for(let seconds=3;seconds>0;seconds--) { button.textContent=`${seconds} 秒后截图`; setStatus('请切换到要截取的窗口…'); await new Promise(resolve=>setTimeout(resolve,1000)); }
+      button.textContent='正在截图…';
+      try { const data=await request('/api/capture',{method:'POST'}); hasPending=true; selectedId=null; captureMeta=data.metadata||{}; $('save').disabled=false; $('discard').disabled=false; showImage(data.image_url); showContext({},true); setStatus(`截图完成 · ${captureMeta.window_title||'未读取到窗口标题'}`); }
+      catch(error) { setStatus(error.message,true); }
+      finally { button.disabled=false; button.textContent='3 秒后截图'; }
+    }
+    async function save() { if(!hasPending) return; if($('mode').value==='session'&&!$('task').value.trim()) { setStatus('Session 样本必须填写任务。',true); return; } setStatus('正在保存…'); try { const data=await request('/api/capture/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload())}); hasPending=false; selectedId=data.sample.id; $('save').disabled=true; $('discard').disabled=true; await loadSamples(); setTab('view'); selectSample(selectedId); setStatus(`已保存到 ${data.sample.split}，已在 View 中选中。`); } catch(error) { setStatus(error.message,true); } }
+    async function discard() { await request('/api/pending',{method:'DELETE'}); hasPending=false; $('save').disabled=true; $('discard').disabled=true; $('preview').hidden=true; $('empty').hidden=false; $('context').hidden=true; setStatus('已丢弃截图。'); }
+    async function moveSelected() { const sample=samples.find(item=>item.id===selectedId); if(!sample) return; const split=sample.split==='train'?'test':'train'; await request(`/api/samples/${sample.id}/move`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({split})}); await loadSamples(); selectSample(sample.id); setStatus(`已移到 ${split}。`); }
+    async function saveEdits() { const sample=samples.find(item=>item.id===selectedId); if(!sample) return; if($('edit-mode').value==='session'&&!$('edit-task').value.trim()) { setStatus('Session 样本必须填写 task。',true); return; } try { const data=await request(`/api/samples/${sample.id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(editPayload())}); selectedId=data.sample.id; await loadSamples(); const updated=samples.find(item=>item.id===selectedId); if(updated) selectSample(selectedId); setStatus('样本与 Context 已更新。'); } catch(error) { setStatus(error.message,true); } }
+    async function deleteSelected() { const sample=samples.find(item=>item.id===selectedId); if(!sample||!confirm('确定删除这个样本和截图？')) return; await request(`/api/samples/${sample.id}`,{method:'DELETE'}); selectedId=null; $('preview').hidden=true; $('empty').hidden=false; $('context').hidden=true; await loadSamples(); setStatus('样本已删除。'); }
+    async function import0825() { const result=await request('/api/import-0825',{method:'POST'}); await loadSamples(); setStatus(`0825 导入完成：新增 ${result.imported}，跳过 ${result.skipped}。`); }
+
+    $('tab-view').onclick=()=>setTab('view'); $('tab-capture').onclick=()=>setTab('capture');
+    $('mode').onchange=updateMode; $('ai-label').oninput=()=>{$('label').value=preferredLabel($('label').value,$('ai-label').value);}; $('edit-mode').onchange=updateEditMode; $('edit-label').onchange=()=>{ if($('edit-label').value!=='ambiguous') $('edit-review-status').value='reviewed'; }; $('capture').onclick=capture; $('save').onclick=save; $('discard').onclick=discard; $('refresh').onclick=loadSamples; $('import').onclick=import0825; $('filter-split').onchange=loadSamples; $('filter-mode').onchange=loadSamples; $('filter-source').onchange=loadSamples; $('filter-review').onchange=loadSamples; $('save-edits').onclick=saveEdits; $('move').onclick=moveSelected; $('delete').onclick=deleteSelected;
+    activeTab=location.hash==='#capture'?'capture':'view'; setTab(activeTab);
+    Promise.all([request('/api/context').then(data=>fillContext(data.context)),loadSamples()]).catch(error=>setStatus(error.message,true));
+    setInterval(()=>{ if(!hasPending) loadSamples().catch(()=>{}); },3000);
+  </script>
+</body>
+</html>

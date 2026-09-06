@@ -1,0 +1,12 @@
+{
+  "role": "train",
+  "source_id": "821a192e-e25b-5b99-b812-a92e3c26ede7",
+  "source_split": "train",
+  "mode": "guardian",
+  "human_label": "entertainment",
+  "activity": "watching a youtube video",
+  "ai_label": "ontask",
+  "ai_reason": "The user is watching a YouTube video titled 'So I Played Expedition 33..'. This does not fall into any of the interrupt categories.",
+  "image_hash": "13031f08071707ff",
+  "image": "train_821a192e.jpg"
+}

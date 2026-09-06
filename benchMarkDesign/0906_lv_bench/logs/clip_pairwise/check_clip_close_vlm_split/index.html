@@ -1,0 +1,575 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>CLIP close / VLM split</title>
+  <style>
+    body { font-family: sans-serif; margin: 24px; background: #111; color: #eee; }
+    h1 { font-size: 22px; margin: 0 0 8px; }
+    .meta { color: #aaa; max-width: 900px; line-height: 1.5; }
+    .pair { margin: 28px 0; padding: 16px; background: #1b1b1b; }
+    .pair header { margin-bottom: 12px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    img { width: 100%; height: auto; background: #000; }
+    figcaption { font-size: 13px; color: #ccc; margin-top: 8px; line-height: 1.45; }
+    code { color: #9cf; }
+    @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <h1>CLIP 分不开、VLM 分开了</h1>
+  <p class="meta">
+    37 张 train 两两组合是 666 对，不是 37 对。CLIP≥0.75 且人工标签不同有 57 对，
+    其中 VLM 标签不同且两侧都对上人工的是 21 对，只涉及 17 张不重复的图。
+    高频重复：eaa1fff2×10, e3548dcc×8, 8c0d8dba×3, e308367d×3, 82e251b1×2, e2da4cd4×2。
+    打开本页即可左右对照，图仍在 data/train/screenshots，没有再拷一份。
+  </p>
+  
+<section class="pair">
+  <header>
+    <strong>#1</strong>
+    CLIP 0.825 · pHash 0.531
+    · 7b731675 / eaa1fff2
+  </header>
+  <div class="grid">
+    <figure>
+      <img src="../../../data/train/screenshots/7b731675-22bc-5aea-97b4-6e4257cc09e7.jpg" alt="7b731675">
+      <figcaption>
+        <div><code>7b731675</code> · guardian</div>
+        <div>人工 <b>ontask</b> · VLM <b>ontask</b></div>
+        <div>browsing files in a directory</div>
+      </figcaption>
+    </figure>
+    <figure>
+      <img src="../../../data/train/screenshots/eaa1fff2-4e54-5189-b894-6d46d636db4e.jpg" alt="eaa1fff2">
+      <figcaption>
+        <div><code>eaa1fff2</code> · guardian</div>
+        <div>人工 <b>entertainment</b> · VLM <b>entertainment</b></div>
+        <div>Searching for &quot;game&quot; related content on YouTube, with suggestions including &quot;game play&quot;, &quot;game theory&quot;, and &quot;Game Grumps&quot;. A banner showing &quot;OW HOW&quot; possibly re</div>
+      </figcaption>
+    </figure>
+  </div>
+</section>
+
+<section class="pair">
+  <header>
+    <strong>#2</strong>
+    CLIP 0.822 · pHash 0.734
+    · 82e251b1 / 8c0d8dba
+  </header>
+  <div class="grid">
+    <figure>
+      <img src="../../../data/train/screenshots/82e251b1-4374-54d7-b5aa-60f5774d6a50.jpg" alt="82e251b1">
+      <figcaption>
+        <div><code>82e251b1</code> · guardian</div>
+        <div>人工 <b>ontask</b> · VLM <b>ontask</b></div>
+        <div>editing a resume in Overleaf</div>
+      </figcaption>
+    </figure>
+    <figure>
+      <img src="../../../data/train/screenshots/8c0d8dba-5ca5-57d3-b833-d15dd082223e.jpg" alt="8c0d8dba">
+      <figcaption>
+        <div><code>8c0d8dba</code> · guardian</div>
+        <div>人工 <b>entertainment</b> · VLM <b>entertainment</b></div>
+        <div>reading a novel</div>
+      </figcaption>
+    </figure>
+  </div>
+</section>
+
+<section class="pair">
+  <header>
+    <strong>#3</strong>
+    CLIP 0.814 · pHash 0.609
+    · 37433e1f / eaa1fff2
+  </header>
+  <div class="grid">
+    <figure>
+      <img src="../../../data/train/screenshots/37433e1f-7e78-52bb-af11-18977670613a.jpg" alt="37433e1f">
+      <figcaption>
+        <div><code>37433e1f</code> · guardian</div>
+        <div>人工 <b>ontask</b> · VLM <b>ontask</b></div>
+        <div>Using ChatGPT to write an email</div>
+      </figcaption>
+    </figure>
+    <figure>
+      <img src="../../../data/train/screenshots/eaa1fff2-4e54-5189-b894-6d46d636db4e.jpg" alt="eaa1fff2">
+      <figcaption>
+        <div><code>eaa1fff2</code> · guardian</div>
+        <div>人工 <b>entertainment</b> · VLM <b>entertainment</b></div>
+        <div>Searching for &quot;game&quot; related content on YouTube, with suggestions including &quot;game play&quot;, &quot;game theory&quot;, and &quot;Game Grumps&quot;. A banner showing &quot;OW HOW&quot; possibly re</div>
+      </figcaption>
+    </figure>
+  </div>
+</section>
+
+<section class="pair">
+  <header>
+    <strong>#4</strong>
+    CLIP 0.805 · pHash 0.766
+    · e308367d / eaa1fff2
+  </header>
+  <div class="grid">
+    <figure>
+      <img src="../../../data/train/screenshots/e308367d-523f-508c-ac1f-7f817ec62188.jpg" alt="e308367d">
+      <figcaption>
+        <div><code>e308367d</code> · guardian</div>
+        <div>人工 <b>ontask</b> · VLM <b>ontask</b></div>
+        <div>reading an article on zenn.dev</div>
+      </figcaption>
+    </figure>
+    <figure>
+      <img src="../../../data/train/screenshots/eaa1fff2-4e54-5189-b894-6d46d636db4e.jpg" alt="eaa1fff2">
+      <figcaption>
+        <div><code>eaa1fff2</code> · guardian</div>
+        <div>人工 <b>entertainment</b> · VLM <b>entertainment</b></div>
+        <div>Searching for &quot;game&quot; related content on YouTube, with suggestions including &quot;game play&quot;, &quot;game theory&quot;, and &quot;Game Grumps&quot;. A banner showing &quot;OW HOW&quot; possibly re</div>
+      </figcaption>
+    </figure>
+  </div>
+</section>
+
+<section class="pair">
+  <header>
+    <strong>#5</strong>
+    CLIP 0.801 · pHash 0.516
+    · 94d26614 / eaa1fff2
+  </header>
+  <div class="grid">
+    <figure>
+      <img src="../../../data/train/screenshots/94d26614-4322-5882-b6e9-83f76884af64.jpg" alt="94d26614">
+      <figcaption>
+        <div><code>94d26614</code> · guardian</div>
+        <div>人工 <b>ontask</b> · VLM <b>ontask</b></div>
+        <div>Browsing files in a folder named &#x27;01 Research&#x27;</div>
+      </figcaption>
+    </figure>
+    <figure>
+      <img src="../../../data/train/screenshots/eaa1fff2-4e54-5189-b894-6d46d636db4e.jpg" alt="eaa1fff2">
+      <figcaption>
+        <div><code>eaa1fff2</code> · guardian</div>
+        <div>人工 <b>entertainment</b> · VLM <b>entertainment</b></div>
+        <div>Searching for &quot;game&quot; related content on YouTube, with suggestions including &quot;game play&quot;, &quot;game theory&quot;, and &quot;Game Grumps&quot;. A banner showing &quot;OW HOW&quot; possibly re</div>
+      </figcaption>
+    </figure>
+  </div>
+</section>
+
+<section class="pair">
+  <header>
+    <strong>#6</strong>
+    CLIP 0.793 · pHash 0.375
+    · 8c0d8dba / e308367d
+  </header>
+  <div class="grid">
+    <figure>
+      <img src="../../../data/train/screenshots/8c0d8dba-5ca5-57d3-b833-d15dd082223e.jpg" alt="8c0d8dba">
+      <figcaption>
+        <div><code>8c0d8dba</code> · guardian</div>
+        <div>人工 <b>entertainment</b> · VLM <b>entertainment</b></div>
+        <div>reading a novel</div>
+      </figcaption>
+    </figure>
+    <figure>
+      <img src="../../../data/train/screenshots/e308367d-523f-508c-ac1f-7f817ec62188.jpg" alt="e308367d">
+      <figcaption>
+        <div><code>e308367d</code> · guardian</div>
+        <div>人工 <b>ontask</b> · VLM <b>ontask</b></div>
+        <div>reading an article on zenn.dev</div>
+      </figcaption>
+    </figure>
+  </div>
+</section>
+
+<section class="pair">
+  <header>
+    <strong>#7</strong>
+    CLIP 0.792 · pHash 0.547
+    · 8c0d8dba / e2da4cd4
+  </header>
+  <div class="grid">
+    <figure>
+      <img src="../../../data/train/screenshots/8c0d8dba-5ca5-57d3-b833-d15dd082223e.jpg" alt="8c0d8dba">
+      <figcaption>
+        <div><code>8c0d8dba</code> · guardian</div>
+        <div>人工 <b>entertainment</b> · VLM <b>entertainment</b></div>
+        <div>reading a novel</div>
+      </figcaption>
+    </figure>
+    <figure>
+      <img src="../../../data/train/screenshots/e2da4cd4-88ce-57ef-b228-e44d2babaaaa.jpg" alt="e2da4cd4">
+      <figcaption>
+        <div><code>e2da4cd4</code> · guardian</div>
+        <div>人工 <b>ontask</b> · VLM <b>ontask</b></div>
+        <div>browsing a comment section on a website</div>
+      </figcaption>
+    </figure>
+  </div>
+</section>
+
+<section class="pair">
+  <header>
+    <strong>#8</strong>
+    CLIP 0.792 · pHash 0.531
+    · 82e251b1 / e3548dcc
+  </header>
+  <div class="grid">
+    <figure>
+      <img src="../../../data/train/screenshots/82e251b1-4374-54d7-b5aa-60f5774d6a50.jpg" alt="82e251b1">
+      <figcaption>
+        <div><code>82e251b1</code> · guardian</div>
+        <div>人工 <b>ontask</b> · VLM <b>ontask</b></div>
+        <div>editing a resume in Overleaf</div>
+      </figcaption>
+    </figure>
+    <figure>
+      <img src="../../../data/train/screenshots/e3548dcc-9539-5c64-9769-8a543bacffd1.jpg" alt="e3548dcc">
+      <figcaption>
+        <div><code>e3548dcc</code> · guardian</div>
+        <div>人工 <b>entertainment</b> · VLM <b>entertainment</b></div>
+        <div>Reading a manga titled &#x27;青梅竹馬是墮入黑暗的聖女&#x27;</div>
+      </figcaption>
+    </figure>
+  </div>
+</section>
+
+<section class="pair">
+  <header>
+    <strong>#9</strong>
+    CLIP 0.791 · pHash 0.656
+    · 3f304421 / eaa1fff2
+  </header>
+  <div class="grid">
+    <figure>
+      <img src="../../../data/train/screenshots/3f304421-40f7-5a0f-88f9-15e514c25442.jpg" alt="3f304421">
+      <figcaption>
+        <div><code>3f304421</code> · session</div>
+        <div>人工 <b>ontask</b> · VLM <b>ontask</b></div>
+        <div>using ChatGPT</div>
+      </figcaption>
+    </figure>
+    <figure>
+      <img src="../../../data/train/screenshots/eaa1fff2-4e54-5189-b894-6d46d636db4e.jpg" alt="eaa1fff2">
+      <figcaption>
+        <div><code>eaa1fff2</code> · guardian</div>
+        <div>人工 <b>entertainment</b> · VLM <b>entertainment</b></div>
+        <div>Searching for &quot;game&quot; related content on YouTube, with suggestions including &quot;game play&quot;, &quot;game theory&quot;, and &quot;Game Grumps&quot;. A banner showing &quot;OW HOW&quot; possibly re</div>
+      </figcaption>
+    </figure>
+  </div>
+</section>
+
+<section class="pair">
+  <header>
+    <strong>#10</strong>
+    CLIP 0.790 · pHash 0.531
+    · 5c742c5b / eaa1fff2
+  </header>
+  <div class="grid">
+    <figure>
+      <img src="../../../data/train/screenshots/5c742c5b-29ee-5b52-8d56-d342cffbf8ea.jpg" alt="5c742c5b">
+      <figcaption>
+        <div><code>5c742c5b</code> · session</div>
+        <div>人工 <b>ontask</b> · VLM <b>ontask</b></div>
+        <div>listening to music</div>
+      </figcaption>
+    </figure>
+    <figure>
+      <img src="../../../data/train/screenshots/eaa1fff2-4e54-5189-b894-6d46d636db4e.jpg" alt="eaa1fff2">
+      <figcaption>
+        <div><code>eaa1fff2</code> · guardian</div>
+        <div>人工 <b>entertainment</b> · VLM <b>entertainment</b></div>
+        <div>Searching for &quot;game&quot; related content on YouTube, with suggestions including &quot;game play&quot;, &quot;game theory&quot;, and &quot;Game Grumps&quot;. A banner showing &quot;OW HOW&quot; possibly re</div>
+      </figcaption>
+    </figure>
+  </div>
+</section>
+
+<section class="pair">
+  <header>
+    <strong>#11</strong>
+    CLIP 0.789 · pHash 0.703
+    · e308367d / e3548dcc
+  </header>
+  <div class="grid">
+    <figure>
+      <img src="../../../data/train/screenshots/e308367d-523f-508c-ac1f-7f817ec62188.jpg" alt="e308367d">
+      <figcaption>
+        <div><code>e308367d</code> · guardian</div>
+        <div>人工 <b>ontask</b> · VLM <b>ontask</b></div>
+        <div>reading an article on zenn.dev</div>
+      </figcaption>
+    </figure>
+    <figure>
+      <img src="../../../data/train/screenshots/e3548dcc-9539-5c64-9769-8a543bacffd1.jpg" alt="e3548dcc">
+      <figcaption>
+        <div><code>e3548dcc</code> · guardian</div>
+        <div>人工 <b>entertainment</b> · VLM <b>entertainment</b></div>
+        <div>Reading a manga titled &#x27;青梅竹馬是墮入黑暗的聖女&#x27;</div>
+      </figcaption>
+    </figure>
+  </div>
+</section>
+
+<section class="pair">
+  <header>
+    <strong>#12</strong>
+    CLIP 0.780 · pHash 0.562
+    · c2c524d7 / eaa1fff2
+  </header>
+  <div class="grid">
+    <figure>
+      <img src="../../../data/train/screenshots/c2c524d7-8d74-50f7-b4ef-3bb6b946ae82.jpg" alt="c2c524d7">
+      <figcaption>
+        <div><code>c2c524d7</code> · guardian</div>
+        <div>人工 <b>ontask</b> · VLM <b>ontask</b></div>
+        <div>The user is on the LeetCode website, working on a coding problem titled &quot;189. Rotate Array&quot;. A secondary window, titled &quot;FocusGuard Agent&quot;, is also visible, dis</div>
+      </figcaption>
+    </figure>
+    <figure>
+      <img src="../../../data/train/screenshots/eaa1fff2-4e54-5189-b894-6d46d636db4e.jpg" alt="eaa1fff2">
+      <figcaption>
+        <div><code>eaa1fff2</code> · guardian</div>
+        <div>人工 <b>entertainment</b> · VLM <b>entertainment</b></div>
+        <div>Searching for &quot;game&quot; related content on YouTube, with suggestions including &quot;game play&quot;, &quot;game theory&quot;, and &quot;Game Grumps&quot;. A banner showing &quot;OW HOW&quot; possibly re</div>
+      </figcaption>
+    </figure>
+  </div>
+</section>
+
+<section class="pair">
+  <header>
+    <strong>#13</strong>
+    CLIP 0.770 · pHash 0.500
+    · c2c524d7 / e3548dcc
+  </header>
+  <div class="grid">
+    <figure>
+      <img src="../../../data/train/screenshots/c2c524d7-8d74-50f7-b4ef-3bb6b946ae82.jpg" alt="c2c524d7">
+      <figcaption>
+        <div><code>c2c524d7</code> · guardian</div>
+        <div>人工 <b>ontask</b> · VLM <b>ontask</b></div>
+        <div>The user is on the LeetCode website, working on a coding problem titled &quot;189. Rotate Array&quot;. A secondary window, titled &quot;FocusGuard Agent&quot;, is also visible, dis</div>
+      </figcaption>
+    </figure>
+    <figure>
+      <img src="../../../data/train/screenshots/e3548dcc-9539-5c64-9769-8a543bacffd1.jpg" alt="e3548dcc">
+      <figcaption>
+        <div><code>e3548dcc</code> · guardian</div>
+        <div>人工 <b>entertainment</b> · VLM <b>entertainment</b></div>
+        <div>Reading a manga titled &#x27;青梅竹馬是墮入黑暗的聖女&#x27;</div>
+      </figcaption>
+    </figure>
+  </div>
+</section>
+
+<section class="pair">
+  <header>
+    <strong>#14</strong>
+    CLIP 0.763 · pHash 0.641
+    · ad5aaf5f / e3548dcc
+  </header>
+  <div class="grid">
+    <figure>
+      <img src="../../../data/train/screenshots/ad5aaf5f-5a17-5eb8-bc9a-f614539a3972.jpg" alt="ad5aaf5f">
+      <figcaption>
+        <div><code>ad5aaf5f</code> · guardian</div>
+        <div>人工 <b>ontask</b> · VLM <b>ontask</b></div>
+        <div>user is interacting with a blocked application or task manager</div>
+      </figcaption>
+    </figure>
+    <figure>
+      <img src="../../../data/train/screenshots/e3548dcc-9539-5c64-9769-8a543bacffd1.jpg" alt="e3548dcc">
+      <figcaption>
+        <div><code>e3548dcc</code> · guardian</div>
+        <div>人工 <b>entertainment</b> · VLM <b>entertainment</b></div>
+        <div>Reading a manga titled &#x27;青梅竹馬是墮入黑暗的聖女&#x27;</div>
+      </figcaption>
+    </figure>
+  </div>
+</section>
+
+<section class="pair">
+  <header>
+    <strong>#15</strong>
+    CLIP 0.760 · pHash 0.703
+    · 710cf89d / e3548dcc
+  </header>
+  <div class="grid">
+    <figure>
+      <img src="../../../data/train/screenshots/710cf89d-f859-593e-a988-988f41bf6b0f.jpg" alt="710cf89d">
+      <figcaption>
+        <div><code>710cf89d</code> · guardian</div>
+        <div>人工 <b>ontask</b> · VLM <b>ontask</b></div>
+        <div>Using a focus agent application with options for breaks, entertainment, and tasks like translation.</div>
+      </figcaption>
+    </figure>
+    <figure>
+      <img src="../../../data/train/screenshots/e3548dcc-9539-5c64-9769-8a543bacffd1.jpg" alt="e3548dcc">
+      <figcaption>
+        <div><code>e3548dcc</code> · guardian</div>
+        <div>人工 <b>entertainment</b> · VLM <b>entertainment</b></div>
+        <div>Reading a manga titled &#x27;青梅竹馬是墮入黑暗的聖女&#x27;</div>
+      </figcaption>
+    </figure>
+  </div>
+</section>
+
+<section class="pair">
+  <header>
+    <strong>#16</strong>
+    CLIP 0.757 · pHash 0.484
+    · 7b53754b / e3548dcc
+  </header>
+  <div class="grid">
+    <figure>
+      <img src="../../../data/train/screenshots/7b53754b-34cb-5caa-bd5d-074bf0bff058.jpg" alt="7b53754b">
+      <figcaption>
+        <div><code>7b53754b</code> · guardian</div>
+        <div>人工 <b>ontask</b> · VLM <b>ontask</b></div>
+        <div>Using an AI coding assistant (Cursor IDE) to review code changes and chat about development tasks.</div>
+      </figcaption>
+    </figure>
+    <figure>
+      <img src="../../../data/train/screenshots/e3548dcc-9539-5c64-9769-8a543bacffd1.jpg" alt="e3548dcc">
+      <figcaption>
+        <div><code>e3548dcc</code> · guardian</div>
+        <div>人工 <b>entertainment</b> · VLM <b>entertainment</b></div>
+        <div>Reading a manga titled &#x27;青梅竹馬是墮入黑暗的聖女&#x27;</div>
+      </figcaption>
+    </figure>
+  </div>
+</section>
+
+<section class="pair">
+  <header>
+    <strong>#17</strong>
+    CLIP 0.755 · pHash 0.656
+    · e2da4cd4 / e3548dcc
+  </header>
+  <div class="grid">
+    <figure>
+      <img src="../../../data/train/screenshots/e2da4cd4-88ce-57ef-b228-e44d2babaaaa.jpg" alt="e2da4cd4">
+      <figcaption>
+        <div><code>e2da4cd4</code> · guardian</div>
+        <div>人工 <b>ontask</b> · VLM <b>ontask</b></div>
+        <div>browsing a comment section on a website</div>
+      </figcaption>
+    </figure>
+    <figure>
+      <img src="../../../data/train/screenshots/e3548dcc-9539-5c64-9769-8a543bacffd1.jpg" alt="e3548dcc">
+      <figcaption>
+        <div><code>e3548dcc</code> · guardian</div>
+        <div>人工 <b>entertainment</b> · VLM <b>entertainment</b></div>
+        <div>Reading a manga titled &#x27;青梅竹馬是墮入黑暗的聖女&#x27;</div>
+      </figcaption>
+    </figure>
+  </div>
+</section>
+
+<section class="pair">
+  <header>
+    <strong>#18</strong>
+    CLIP 0.754 · pHash 0.688
+    · 3f304421 / e3548dcc
+  </header>
+  <div class="grid">
+    <figure>
+      <img src="../../../data/train/screenshots/3f304421-40f7-5a0f-88f9-15e514c25442.jpg" alt="3f304421">
+      <figcaption>
+        <div><code>3f304421</code> · session</div>
+        <div>人工 <b>ontask</b> · VLM <b>ontask</b></div>
+        <div>using ChatGPT</div>
+      </figcaption>
+    </figure>
+    <figure>
+      <img src="../../../data/train/screenshots/e3548dcc-9539-5c64-9769-8a543bacffd1.jpg" alt="e3548dcc">
+      <figcaption>
+        <div><code>e3548dcc</code> · guardian</div>
+        <div>人工 <b>entertainment</b> · VLM <b>entertainment</b></div>
+        <div>Reading a manga titled &#x27;青梅竹馬是墮入黑暗的聖女&#x27;</div>
+      </figcaption>
+    </figure>
+  </div>
+</section>
+
+<section class="pair">
+  <header>
+    <strong>#19</strong>
+    CLIP 0.753 · pHash 0.578
+    · aa018a39 / eaa1fff2
+  </header>
+  <div class="grid">
+    <figure>
+      <img src="../../../data/train/screenshots/aa018a39-834b-5c92-9d4d-7d262ab0a940.jpg" alt="aa018a39">
+      <figcaption>
+        <div><code>aa018a39</code> · guardian</div>
+        <div>人工 <b>ontask</b> · VLM <b>ontask</b></div>
+        <div>Coding and running a script in a terminal</div>
+      </figcaption>
+    </figure>
+    <figure>
+      <img src="../../../data/train/screenshots/eaa1fff2-4e54-5189-b894-6d46d636db4e.jpg" alt="eaa1fff2">
+      <figcaption>
+        <div><code>eaa1fff2</code> · guardian</div>
+        <div>人工 <b>entertainment</b> · VLM <b>entertainment</b></div>
+        <div>Searching for &quot;game&quot; related content on YouTube, with suggestions including &quot;game play&quot;, &quot;game theory&quot;, and &quot;Game Grumps&quot;. A banner showing &quot;OW HOW&quot; possibly re</div>
+      </figcaption>
+    </figure>
+  </div>
+</section>
+
+<section class="pair">
+  <header>
+    <strong>#20</strong>
+    CLIP 0.753 · pHash 0.641
+    · ad5aaf5f / eaa1fff2
+  </header>
+  <div class="grid">
+    <figure>
+      <img src="../../../data/train/screenshots/ad5aaf5f-5a17-5eb8-bc9a-f614539a3972.jpg" alt="ad5aaf5f">
+      <figcaption>
+        <div><code>ad5aaf5f</code> · guardian</div>
+        <div>人工 <b>ontask</b> · VLM <b>ontask</b></div>
+        <div>user is interacting with a blocked application or task manager</div>
+      </figcaption>
+    </figure>
+    <figure>
+      <img src="../../../data/train/screenshots/eaa1fff2-4e54-5189-b894-6d46d636db4e.jpg" alt="eaa1fff2">
+      <figcaption>
+        <div><code>eaa1fff2</code> · guardian</div>
+        <div>人工 <b>entertainment</b> · VLM <b>entertainment</b></div>
+        <div>Searching for &quot;game&quot; related content on YouTube, with suggestions including &quot;game play&quot;, &quot;game theory&quot;, and &quot;Game Grumps&quot;. A banner showing &quot;OW HOW&quot; possibly re</div>
+      </figcaption>
+    </figure>
+  </div>
+</section>
+
+<section class="pair">
+  <header>
+    <strong>#21</strong>
+    CLIP 0.753 · pHash 0.578
+    · 9564681e / eaa1fff2
+  </header>
+  <div class="grid">
+    <figure>
+      <img src="../../../data/train/screenshots/9564681e-3740-56c4-aebb-e91bbe5e8984.jpg" alt="9564681e">
+      <figcaption>
+        <div><code>9564681e</code> · guardian</div>
+        <div>人工 <b>ontask</b> · VLM <b>ontask</b></div>
+        <div>Reading documentation and code</div>
+      </figcaption>
+    </figure>
+    <figure>
+      <img src="../../../data/train/screenshots/eaa1fff2-4e54-5189-b894-6d46d636db4e.jpg" alt="eaa1fff2">
+      <figcaption>
+        <div><code>eaa1fff2</code> · guardian</div>
+        <div>人工 <b>entertainment</b> · VLM <b>entertainment</b></div>
+        <div>Searching for &quot;game&quot; related content on YouTube, with suggestions including &quot;game play&quot;, &quot;game theory&quot;, and &quot;Game Grumps&quot;. A banner showing &quot;OW HOW&quot; possibly re</div>
+      </figcaption>
+    </figure>
+  </div>
+</section>
+
+</body>
+</html>

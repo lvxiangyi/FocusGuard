@@ -9,9 +9,10 @@ electron/release/
 __pycache__/
 *.pyc
 .env
-logs/
-data/
+/logs/
+/data/
 backend/screenshots/
 *.jpg
+!benchMarkDesign/**/*.jpg
 .vite/
 package-lock.json
