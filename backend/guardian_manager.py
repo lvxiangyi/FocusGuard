@@ -8,7 +8,7 @@ from typing import Optional
 
 from blocker_window import blocker
 from data_paths import GUARDIAN_LOG_FILE, GUARDIAN_SCREENSHOT_DIR, GUARDIAN_STATE_FILE
-from screenshot import capture_screenshot, reused_judgement, should_reuse_previous
+from screenshot import capture_screenshot, reused_judgement, should_reuse_previous, timestamped_screenshot_path
 from settings_manager import (
     get_guardian_check_interval_seconds,
     get_guardian_entertainment_daily_limit_minutes,
@@ -541,11 +541,7 @@ class GuardianManager:
             )
 
     def _next_screenshot_path(self) -> str:
-        now = datetime.now().astimezone()
-        day_dir = GUARDIAN_SCREENSHOT_DIR / now.date().isoformat()
-        day_dir.mkdir(parents=True, exist_ok=True)
-        filename = f"{now.strftime('%H%M%S')}-{uuid.uuid4()}.jpg"
-        return str(day_dir / filename)
+        return timestamped_screenshot_path(GUARDIAN_SCREENSHOT_DIR)
 
     def _append_log(self, result: dict, screenshot_path: str):
         now = datetime.now().astimezone().isoformat()

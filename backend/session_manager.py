@@ -8,7 +8,7 @@ from typing import Optional
 
 from data_paths import LOGS_DIR
 from report_manager import record_block
-from screenshot import capture_screenshot, reused_judgement, should_reuse_previous
+from screenshot import capture_screenshot, reused_judgement, should_reuse_previous, timestamped_screenshot_path
 from vision_judge import judge_screenshot, evaluate_dispute
 from blocker_window import blocker
 from settings_manager import (
@@ -474,9 +474,11 @@ class SessionManager:
                     await asyncio.sleep(1)
                     continue
 
-                # Take screenshot
+                # Take screenshot. Save each check to its own timestamped file:
+                # a shared latest.jpg would be overwritten next check and every
+                # historical log row would show the newest image.
                 try:
-                    screenshot_path, thumb = capture_screenshot()
+                    screenshot_path, thumb = capture_screenshot(output_path=timestamped_screenshot_path())
                 except Exception as e:
                     print(f"[session] Screenshot error: {e}")
                     await asyncio.sleep(self.check_interval_seconds)

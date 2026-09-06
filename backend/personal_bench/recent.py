@@ -33,6 +33,20 @@ def _read_jsonl_tail(path: Path, limit: int) -> list[dict]:
     return out
 
 
+def _usable_screenshot(resolved: Optional[Path]) -> Optional[Path]:
+    """Drop rows whose only image is screenshots/latest.jpg.
+
+    Session checks used to overwrite one shared latest.jpg, so a log row
+    pointing at it no longer holds that check's own screenshot — showing it
+    would display the newest image for every historical row.
+    """
+    if not resolved:
+        return None
+    if resolved.name.casefold() == "latest.jpg":
+        return None
+    return resolved
+
+
 def _resolve_screenshot(data_root: Path, raw_path: str, mode: str) -> Optional[Path]:
     if not raw_path:
         return None
@@ -68,7 +82,7 @@ def load_recent_judgments(limit: int = 10, data_root: Optional[Path] = None) -> 
     merged: list[dict] = []
     for entry in guardian_logs:
         captured = entry.get("checked_at") or entry.get("timestamp") or ""
-        screenshot = _resolve_screenshot(data_root, entry.get("screenshot_path") or "", "guardian")
+        screenshot = _usable_screenshot(_resolve_screenshot(data_root, entry.get("screenshot_path") or "", "guardian"))
         ai_label = ai_outcome_to_label("guardian", entry)
         item_id = f"guardian:{captured}:{entry.get('screenshot_path') or ''}"
         merged.append(
@@ -92,7 +106,7 @@ def load_recent_judgments(limit: int = 10, data_root: Optional[Path] = None) -> 
 
     for entry in session_logs:
         captured = entry.get("timestamp") or ""
-        screenshot = _resolve_screenshot(data_root, entry.get("screenshot_path") or "", "session")
+        screenshot = _usable_screenshot(_resolve_screenshot(data_root, entry.get("screenshot_path") or "", "session"))
         ai_label = ai_outcome_to_label("session", entry)
         item_id = f"session:{captured}:{entry.get('screenshot_path') or ''}"
         merged.append(

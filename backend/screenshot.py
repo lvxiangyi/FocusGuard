@@ -1,6 +1,8 @@
 import ctypes
 import os
+import uuid
 from ctypes import wintypes
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -111,6 +113,19 @@ def should_reuse_previous(
         f"threshold={change_ratio_threshold:.4f} reuse={reuse}"
     )
     return reuse
+
+
+def timestamped_screenshot_path(directory: Optional[Path] = None) -> str:
+    """Unique per-check screenshot under <directory>/<yyyy-mm-dd>/<HHMMSS>-<uuid>.jpg.
+
+    Every check must keep its own file: a shared "latest.jpg" gets overwritten
+    by the next check, so historical log rows would all resolve to the newest image.
+    """
+    directory = Path(directory) if directory else SCREENSHOT_DIR
+    now = datetime.now().astimezone()
+    day_dir = directory / now.date().isoformat()
+    day_dir.mkdir(parents=True, exist_ok=True)
+    return str(day_dir / f"{now.strftime('%H%M%S')}-{uuid.uuid4().hex[:8]}.jpg")
 
 
 def capture_screenshot(width: int = 768, output_path: Optional[str] = None) -> Tuple[str, Image.Image]:
