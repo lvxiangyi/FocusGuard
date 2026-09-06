@@ -6,6 +6,7 @@ from typing import Optional
 from report_manager import record_block
 from session_manager import session_manager
 from settings_manager import get_default_check_interval_seconds, get_default_strict_mode, get_default_trigger_threshold
+from time_warning import remaining_seconds_until, sleep_with_five_minute_warning
 
 
 class FlowManager:
@@ -99,7 +100,15 @@ class FlowManager:
 
     async def _break_timer(self, payload: dict):
         try:
-            await asyncio.sleep(int(payload["break_minutes"]) * 60)
+            remaining = remaining_seconds_until(payload["ends_at"]) if payload.get("ends_at") else 0
+            if remaining <= 0:
+                remaining = max(1, int(payload["break_minutes"]) * 60)
+            await sleep_with_five_minute_warning(
+                remaining,
+                "休息提醒",
+                "休息时间还剩 5 分钟。请慢慢收尾，准备回到工作。",
+                ends_at=payload.get("ends_at"),
+            )
             from blocker_window import blocker
             if payload.get("strict_mode"):
                 blocker.show_break_end_translation(payload)

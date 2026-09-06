@@ -2,6 +2,7 @@ import os
 from datetime import datetime
 from typing import Optional
 
+from llm_client import has_api_key, missing_key_message
 from settings_manager import get_selected_model
 
 
@@ -13,11 +14,6 @@ _last_model: Optional[str] = None
 
 def is_mock_enabled() -> bool:
     return os.getenv("AIMONITOR_ENABLE_MOCK_AI", "").strip().lower() in {"1", "true", "yes", "on"}
-
-
-def has_api_key() -> bool:
-    key = os.getenv("OPENROUTER_API_KEY", "").strip()
-    return bool(key and key != "your_api_key_here")
 
 
 def record_ai_success(model: str):
@@ -44,7 +40,7 @@ def get_ai_status() -> dict:
         message = "Mock 模式已开启，AI 判定会使用测试数据。"
     elif not key_present:
         state = "unconfigured"
-        message = "未配置有效的 OpenRouter API Key。"
+        message = missing_key_message(model)
     elif _last_error:
         state = "error"
         message = _last_error

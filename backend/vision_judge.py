@@ -1,12 +1,9 @@
-import os
 import json
 import base64
 import random
 import re
 import time
 
-from openai import OpenAI
-from dotenv import load_dotenv
 from ai_status_manager import (
     has_api_key,
     is_mock_enabled,
@@ -14,12 +11,8 @@ from ai_status_manager import (
     record_ai_success,
 )
 from settings_manager import get_selected_model, get_supervision_rules
-from data_paths import ENV_FILE
+from llm_client import extra_body_for_model, get_client, message_text, missing_key_message
 
-load_dotenv(dotenv_path=ENV_FILE)
-
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
-OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 JUDGE_MAX_ATTEMPTS = 3
 
 PROMPT_TEMPLATE = """You are a focus monitoring agent.
@@ -31,22 +24,21 @@ The user's declared task is:
 
 {precedents}
 
-Look at the screenshot and judge whether the user is currently working on the declared task.
+Look at the screenshot and decide on_task using ONLY the supervision rules below.
+The declared task is background context. It is the decision criterion only when the supervision level is TASK_RELATED.
 
 {supervision_rules}
 
-Important rules:
-- If the user is reading novels, reading manga/comics, viewing porn/adult websites, watching short videos, using social media, consuming entertainment content, playing games, shopping, or using unrelated websites, mark on_task as false unless the supervision rules explicitly allow it.
-- If the user is reading documents, writing notes, using educational websites, coding related to the task, or solving problems related to the declared task, mark on_task as true.
-- If unsure, use the screenshot content and the user's declared task to make the best judgement.
-- Be strict but reasonable.
-- Learned exceptions listed above are dispute-memory only: those specific activities are on-task. Do not treat personal calibration cases as automatic on-task exceptions.
+Shared rules:
+- Hard-blocked content is always off-task: porn/adult sexual content, reading novels/web novels, and reading manga/comics.
+- Personal calibration cases above are user-labeled similar screens. If the current screen is visually similar to a case, follow that human_label. They are not a blanket whitelist for entertainment.
+- Learned exceptions listed above are dispute-memory only: those specific activities are on-task.
+- If the screenshot is blank, dark, idle, or unclear, still return JSON. Do not treat that as entertainment by default.
 
 CRITICAL OUTPUT RULES:
 - Reply with a single JSON object only.
 - Do not use markdown fences.
 - Do not write any explanation before or after the JSON.
-- Even if the screenshot is blank, dark, or unclear, still return JSON.
 
 Required JSON shape:
 {{
@@ -209,12 +201,8 @@ def _api_error_result(task: str, error: str, model: str = "", error_kind: str = 
 
 
 def _get_client():
-    """Get OpenAI client configured for OpenRouter."""
-    return OpenAI(
-        api_key=OPENROUTER_API_KEY,
-        base_url=OPENROUTER_BASE_URL,
-        timeout=60.0,
-    )
+    """Get the OpenAI-compatible client for the selected model."""
+    return get_client()
 
 
 def extract_json_object(text: str) -> dict:
@@ -282,6 +270,9 @@ def _chat_completion_json(client, *, model: str, content_parts: list, max_tokens
                 "max_tokens": max_tokens,
                 "temperature": 0.1,
             }
+            extra_body = extra_body_for_model(model)
+            if extra_body:
+                kwargs["extra_body"] = extra_body
             try:
                 response = client.chat.completions.create(
                     **kwargs,
@@ -293,8 +284,7 @@ def _chat_completion_json(client, *, model: str, content_parts: list, max_tokens
                 else:
                     raise
 
-            raw = response.choices[0].message.content
-            return extract_json_object(raw)
+            return extract_json_object(message_text(response))
         except Exception as e:
             last_error = e
             kind = classify_judge_error(e)
@@ -322,7 +312,7 @@ def _retrieve_personal_hits(mode: str, task: str = "", screenshot_path: str = ""
         from personal_bench.retrieve import retrieve_similar
         from personal_bench.store import BenchStore
 
-        return retrieve_similar(
+        hits = retrieve_similar(
             BenchStore(),
             mode=mode,
             task=task or "",
@@ -330,6 +320,15 @@ def _retrieve_personal_hits(mode: str, task: str = "", screenshot_path: str = ""
             image_path=screenshot_path or None,
             k=3,
         )
+        if hits:
+            summary = ", ".join(
+                f"{h.get('id', '')[:8]}:{h.get('human_label')}:{h.get('retrieval_score')}"
+                for h in hits
+            )
+            print(f"[vision_judge] Personal bench hits ({mode}): {summary}")
+        else:
+            print(f"[vision_judge] Personal bench hits ({mode}): none")
+        return hits
     except Exception as e:
         print(f"[vision_judge] Personal bench retrieval skipped: {e}")
         return []
@@ -363,6 +362,21 @@ def should_force_guardian_category_interrupt(category: str, hits: list) -> bool:
     return score < PERSONAL_ALLOW_OVERRIDE_SCORE
 
 
+def build_session_judge_prompt(
+    task: str,
+    supervision_level: str = None,
+    memory_context: str = "",
+    precedents: str = "",
+) -> str:
+    """Assemble the Session judge prompt for the given supervision level."""
+    return PROMPT_TEMPLATE.format(
+        task=task or "",
+        memory_context=memory_context or "",
+        precedents=precedents or "",
+        supervision_rules=get_supervision_rules(supervision_level),
+    )
+
+
 def judge_screenshot(task: str, screenshot_path: str, memory: list = None, supervision_level: str = None) -> dict:
     """Judge whether the user is on task based on a screenshot."""
     model = get_selected_model()
@@ -372,13 +386,12 @@ def judge_screenshot(task: str, screenshot_path: str, memory: list = None, super
         return _mock_judge(task)
 
     if not has_api_key():
-        error = "No valid OpenRouter API key configured."
+        error = missing_key_message(model)
         print(f"[vision_judge] {error}")
         record_ai_error(error, model=model)
         return _api_error_result(task, error, model=model, error_kind="auth_error")
 
     memory_context = _format_memory_context(memory or [])
-    supervision_rules = get_supervision_rules(supervision_level)
     precedents = _personal_precedents_block("session", task=task, screenshot_path=screenshot_path)
 
     try:
@@ -394,11 +407,11 @@ def judge_screenshot(task: str, screenshot_path: str, memory: list = None, super
             content_parts=[
                 {
                     "type": "text",
-                    "text": PROMPT_TEMPLATE.format(
-                        task=task,
+                    "text": build_session_judge_prompt(
+                        task,
+                        supervision_level=supervision_level,
                         memory_context=memory_context,
                         precedents=precedents,
-                        supervision_rules=supervision_rules,
                     ),
                 },
                 {
@@ -419,7 +432,7 @@ def judge_screenshot(task: str, screenshot_path: str, memory: list = None, super
     except Exception as e:
         error = str(e)
         kind = classify_judge_error(e)
-        print(f"[vision_judge] Error calling OpenRouter API ({kind}): {error}")
+        print(f"[vision_judge] Error calling API ({kind}): {error}")
         print("[vision_judge] Pausing this judgement instead of using random mock mode.")
         record_ai_error(error, model=model)
         return _api_error_result(task, error, model=model, error_kind=kind)
@@ -435,7 +448,7 @@ def judge_guardian_screenshot(screenshot_path: str) -> dict:
         return result
 
     if not has_api_key():
-        error = "No valid OpenRouter API key configured."
+        error = missing_key_message(model)
         print(f"[vision_judge] {error}")
         record_ai_error(error, model=model)
         return _api_error_result("Guardian mode", error, model=model, error_kind="auth_error")
@@ -489,7 +502,7 @@ def judge_guardian_screenshot(screenshot_path: str) -> dict:
     except Exception as e:
         error = str(e)
         kind = classify_judge_error(e)
-        print(f"[vision_judge] Guardian error calling OpenRouter API ({kind}): {error}")
+        print(f"[vision_judge] Guardian error calling API ({kind}): {error}")
         record_ai_error(error, model=model)
         return _api_error_result("Guardian mode", error, model=model, error_kind=kind)
 

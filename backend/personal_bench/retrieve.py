@@ -113,8 +113,14 @@ def retrieve_similar(
         return ranked
 
     picked: list[dict] = []
-    for score, sample in rank(same_task):
-        if score < min_score:
+    for index, (score, sample) in enumerate(rank(same_task)):
+        # Session same-task examples are user calibration for this task.
+        # Judge-time queries have no activity text, so Jaccard against the
+        # sample's long reason is weak; always keep the best same-task hit.
+        floor = min_score
+        if mode == "session" and task_norm and index == 0:
+            floor = 0.0
+        if score < floor:
             continue
         item = dict(sample)
         item["retrieval_score"] = round(score, 4)

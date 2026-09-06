@@ -1,6 +1,11 @@
 import unittest
 
-from vision_judge import classify_judge_error, extract_json_object, should_force_guardian_category_interrupt
+from vision_judge import (
+    build_session_judge_prompt,
+    classify_judge_error,
+    extract_json_object,
+    should_force_guardian_category_interrupt,
+)
 
 
 class VisionJudgeParseTests(unittest.TestCase):
@@ -41,6 +46,24 @@ class VisionJudgeParseTests(unittest.TestCase):
             [{"human_label": "allow", "retrieval_score": 0.2}],
         ))
         self.assertFalse(should_force_guardian_category_interrupt("none", []))
+
+    def test_not_entertainment_prompt_does_not_require_declared_task(self):
+        prompt = build_session_judge_prompt("整理情绪，制定下一步改变的计划。", "not_entertainment")
+        lowered = prompt.lower()
+        self.assertIn("not_entertainment", lowered)
+        self.assertIn("idle desktop", lowered)
+        self.assertIn("search homepage", lowered)
+        self.assertIn("do not require the activity to match the declared task", lowered)
+        self.assertNotIn("currently working on the declared task", lowered)
+        self.assertNotIn("unrelated websites", lowered)
+        self.assertNotIn("be strict but reasonable", lowered)
+
+    def test_task_related_prompt_still_requires_declared_task(self):
+        prompt = build_session_judge_prompt("学习具身智能面经", "task_related")
+        lowered = prompt.lower()
+        self.assertIn("task_related", lowered)
+        self.assertIn("the declared task is the decision criterion", lowered)
+        self.assertIn("strongly related to the declared task", lowered)
 
 
 if __name__ == "__main__":

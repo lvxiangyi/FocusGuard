@@ -8,7 +8,7 @@ from typing import Optional
 
 from data_paths import LOGS_DIR
 from report_manager import record_block
-from screenshot import take_screenshot
+from screenshot import capture_screenshot, reused_judgement, should_reuse_previous
 from vision_judge import judge_screenshot, evaluate_dispute
 from blocker_window import blocker
 from settings_manager import (
@@ -16,6 +16,7 @@ from settings_manager import (
     get_default_strict_mode,
     get_default_trigger_threshold,
     get_nudge_prompt,
+    get_post_block_cooldown_seconds,
     get_supervision_level,
 )
 
@@ -70,6 +71,9 @@ class SessionManager:
         self.first_check_delay_seconds: float = 0
         self._finalized: bool = False
         self._paused_at: Optional[float] = None
+        self.paused_for_rest: bool = False
+        self._next_check_at: float = 0
+        self._last_screenshot_thumb = None
 
     def start_session(
         self,
@@ -127,6 +131,10 @@ class SessionManager:
         self.first_check_delay_seconds = max(0, float(first_check_delay_seconds or 0))
         self._finalized = False
         self._paused_at = None
+        self.paused_for_rest = False
+        self._next_check_at = 0
+        self._last_screenshot_thumb = None
+        self._pause_if_rest_active()
 
         # Start background monitoring loop
         self._loop_task = asyncio.create_task(self._monitor_loop())
@@ -137,10 +145,19 @@ class SessionManager:
         try:
             from guardian_manager import guardian_manager
 
-            guardian_manager.cancel_break()
+            # Rest is independent: starting a Session must not cancel it.
             guardian_manager.cancel_entertainment(commit_elapsed=True)
         except Exception as e:
-            print(f"[session] Could not cancel guardian state before session start: {e}")
+            print(f"[session] Could not cancel guardian entertainment before session start: {e}")
+
+    def _pause_if_rest_active(self):
+        try:
+            from guardian_manager import guardian_manager
+
+            if guardian_manager.pending_break:
+                self.pause_for_rest()
+        except Exception as e:
+            print(f"[session] Could not pause for existing rest: {e}")
 
     def stop_session(self, status: str = "stopped", notify: bool = False, stop_reason: Optional[str] = None):
         """Stop the current session."""
@@ -163,6 +180,7 @@ class SessionManager:
         self.active = False
         self.should_block = False
         self._paused_at = None
+        self.paused_for_rest = False
 
         actual_start = datetime.fromtimestamp(self.start_time).isoformat() if self.start_time else None
         actual_end = datetime.now().isoformat()
@@ -233,6 +251,7 @@ class SessionManager:
         self.off_task_streak = 0
         # Dismiss system-level blocker window
         blocker.dismiss()
+        self.resume_after_rest()
 
     def dispute(self, reason: str) -> dict:
         """User disputes the AI judgement. Ask AI to re-evaluate."""
@@ -267,19 +286,65 @@ class SessionManager:
 
         return result
 
+    def _rest_still_active(self) -> bool:
+        try:
+            from guardian_manager import guardian_manager
+            return bool(guardian_manager.pending_break)
+        except Exception:
+            return False
+
+    def _release_stale_rest_pause(self):
+        """Unstick Session if rest already ended and no overlay is holding it."""
+        if not self.paused_for_rest:
+            return False
+        overlay = bool(self.should_block)
+        try:
+            overlay = overlay or bool(blocker.is_showing)
+        except Exception:
+            pass
+        if overlay or self._rest_still_active():
+            return False
+        return self.resume_after_rest()
+
+    def _is_paused_externally(self) -> bool:
+        self._release_stale_rest_pause()
+        if self.paused_for_rest:
+            return True
+        if self.should_block:
+            return True
+        try:
+            return bool(blocker.is_showing)
+        except Exception:
+            return False
+
+    def pause_for_rest(self) -> bool:
+        """Freeze Session time and skip screenshots while an independent rest runs."""
+        if not self.active:
+            return False
+        self.paused_for_rest = True
+        self._sync_overlay_pause()
+        print(f"[session] Paused for rest (remaining {self.get_remaining_seconds()}s).")
+        return True
+
+    def resume_after_rest(self) -> bool:
+        if not self.paused_for_rest:
+            return False
+        self.paused_for_rest = False
+        if not self.active:
+            self._paused_at = None
+            return False
+        self._sync_overlay_pause()
+        print(f"[session] Resumed after rest (remaining {self.get_remaining_seconds()}s).")
+        return True
+
     def _sync_overlay_pause(self) -> bool:
-        """Freeze remaining time while the quiz/review overlay is showing.
+        """Freeze remaining time while rest, quiz, or review overlay is showing.
 
         Answering (and the new review screen) can take longer than the leftover
         session time. If we keep counting, the session finalizes, Electron drops
         the running status panel, and 回到工作 looks like it killed the session.
         """
-        showing = bool(self.should_block)
-        if not showing:
-            try:
-                showing = bool(blocker.is_showing)
-            except Exception:
-                showing = False
+        showing = self._is_paused_externally()
         if showing:
             if self._paused_at is None:
                 self._paused_at = time.time()
@@ -287,7 +352,14 @@ class SessionManager:
         if self._paused_at is not None:
             self.start_time = (self.start_time or time.time()) + (time.time() - self._paused_at)
             self._paused_at = None
+            self._arm_post_block_cooldown()
         return False
+
+    def _arm_post_block_cooldown(self):
+        delay = max(0, int(get_post_block_cooldown_seconds()))
+        self._next_check_at = time.time() + delay
+        if delay:
+            print(f"[session] Post-block cooldown {delay}s before next screenshot.")
 
     def get_remaining_seconds(self) -> int:
         """Get remaining time in seconds."""
@@ -302,6 +374,7 @@ class SessionManager:
 
     def get_status(self) -> dict:
         """Get current session status."""
+        self._release_stale_rest_pause()
         return {
             "active": self.active,
             "session_id": self.session_id,
@@ -316,6 +389,7 @@ class SessionManager:
             "planned_end": self.planned_end,
             "tags": self.tags,
             "strict_mode": self.strict_mode,
+            "paused_for_rest": bool(self.paused_for_rest),
             "supervision_level": self.supervision_level,
             "trigger_threshold": self.trigger_threshold,
             "logs": self.logs[-20:],  # Return last 20 logs
@@ -396,21 +470,29 @@ class SessionManager:
                     self._finish_session(status="completed", notify=True)
                     break
 
+                if time.time() < self._next_check_at:
+                    await asyncio.sleep(1)
+                    continue
+
                 # Take screenshot
                 try:
-                    screenshot_path = take_screenshot()
+                    screenshot_path, thumb = capture_screenshot()
                 except Exception as e:
                     print(f"[session] Screenshot error: {e}")
                     await asyncio.sleep(self.check_interval_seconds)
                     continue
 
-                # Judge (pass memory for context)
-                result = judge_screenshot(
-                    self.task,
-                    screenshot_path,
-                    memory=self.dispute_memory,
-                    supervision_level=self.supervision_level,
-                )
+                if should_reuse_previous(self._last_screenshot_thumb, thumb, self.latest_judgement):
+                    result = reused_judgement(self.latest_judgement)
+                    print("[session] Screenshot nearly unchanged; reusing previous judgement.")
+                else:
+                    result = judge_screenshot(
+                        self.task,
+                        screenshot_path,
+                        memory=self.dispute_memory,
+                        supervision_level=self.supervision_level,
+                    )
+                self._last_screenshot_thumb = thumb
                 self.latest_judgement = result
                 judgement_status = self._apply_judgement(result)
 

@@ -31,6 +31,7 @@ from quiz_generator import (
     get_practice_attempts,
     get_practice_status,
     grade_translation_answer,
+    explain_translation,
     record_wrong_answer,
     get_wrong_answers,
     save_practice_source_file,
@@ -118,8 +119,10 @@ class SettingsRequest(BaseModel):
     guardian_check_interval_seconds: Optional[int] = None
     guardian_entertainment_daily_limit_minutes: Optional[int] = None
     guardian_entertainment_day_start_time: Optional[str] = None
+    guardian_rest_quota_per_day: Optional[int] = None
     practice_source_path: Optional[str] = None
     practice_target_language: Optional[str] = None
+    post_block_cooldown_seconds: Optional[int] = None
     dataset_tag_options: Optional[List[str]] = None
     dataset_retention_days: Optional[int] = None
 
@@ -751,6 +754,16 @@ class TranslationGradeRequest(BaseModel):
     target_language: Optional[str] = None
 
 
+class TranslationExplainRequest(BaseModel):
+    challenge_id: str = ""
+    source_text: str
+    source: Optional[str] = None
+    source_name: Optional[str] = None
+    item_index: Optional[int] = None
+    item_total: Optional[int] = None
+    target_language: Optional[str] = None
+
+
 class PracticeUploadRequest(BaseModel):
     filename: str
     content: str
@@ -798,6 +811,26 @@ async def api_translation_grade(req: TranslationGradeRequest):
     return grade_translation_answer(
         req.source_text,
         req.user_answer,
+        target_language=req.target_language,
+        challenge=challenge,
+    )
+
+
+@app.post("/strict/translation/explain")
+async def api_translation_explain(req: TranslationExplainRequest):
+    if not (req.source_text or "").strip():
+        raise HTTPException(status_code=400, detail="没有题目文本。")
+    challenge = {
+        "challenge_id": req.challenge_id,
+        "source_text": req.source_text,
+        "source": req.source or "",
+        "source_name": req.source_name or "",
+        "item_index": req.item_index,
+        "item_total": req.item_total,
+        "target_language": req.target_language or "",
+    }
+    return explain_translation(
+        req.source_text,
         target_language=req.target_language,
         challenge=challenge,
     )

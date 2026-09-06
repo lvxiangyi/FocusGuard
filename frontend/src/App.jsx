@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import {
   startSession, stopSession, getStatus,
   startGuardianEntertainment,
+  startGuardianBreak,
   getSchedules, addSchedule, deleteSchedule,
   getDailyReport, testBlock,
   getSettings, saveSettings, getAiStatus,
@@ -83,12 +84,15 @@ function App() {
   const [selectedSupervisionLevel, setSelectedSupervisionLevel] = useState('not_entertainment')
   const [nudgePrompt, setNudgePrompt] = useState('')
   const [defaultInterval, setDefaultInterval] = useState('300')
+  const [postBlockCooldown, setPostBlockCooldown] = useState('300')
   const [defaultTriggerThreshold, setDefaultTriggerThreshold] = useState('1')
   const [whitelistText, setWhitelistText] = useState('')
   const [guardianEnabled, setGuardianEnabled] = useState(true)
   const [guardianInterval, setGuardianInterval] = useState('300')
   const [guardianEntertainmentMinutes, setGuardianEntertainmentMinutes] = useState('20')
+  const [guardianRestMinutes, setGuardianRestMinutes] = useState('10')
   const [guardianDailyEntertainmentLimit, setGuardianDailyEntertainmentLimit] = useState('60')
+  const [guardianRestQuota, setGuardianRestQuota] = useState('3')
   const [guardianDayStartTime, setGuardianDayStartTime] = useState('04:00')
   const [guardianActionStatus, setGuardianActionStatus] = useState('')
   const [practiceTargetLanguage, setPracticeTargetLanguage] = useState('Japanese')
@@ -156,7 +160,7 @@ function App() {
       setRemainingSeconds(0)
       return
     }
-    if (status?.should_block) {
+    if (status?.should_block || status?.paused_for_rest) {
       return
     }
 
@@ -174,7 +178,7 @@ function App() {
     tick()
     const id = window.setInterval(tick, COUNTDOWN_TICK_MS)
     return () => window.clearInterval(id)
-  }, [isRunning, status?.should_block])
+  }, [isRunning, status?.should_block, status?.paused_for_rest])
 
   useEffect(() => {
     if (isRunning || !status?.flow_status?.active) return
@@ -248,11 +252,15 @@ function App() {
           setSelectedSupervisionLevel(d.settings?.supervision_level || 'not_entertainment')
           setNudgePrompt(d.settings?.nudge_prompt || '')
           setDefaultInterval(String(d.settings?.default_check_interval_seconds || 300))
+          setPostBlockCooldown(String(d.settings?.post_block_cooldown_seconds ?? 300))
           setDefaultTriggerThreshold(String(d.settings?.trigger_threshold || 1))
           setWhitelistText((d.settings?.whitelist_behaviors || []).join('\n'))
           setGuardianEnabled(Boolean(d.settings?.guardian_mode_enabled ?? true))
           setGuardianInterval(String(d.settings?.guardian_check_interval_seconds || 300))
           setGuardianDailyEntertainmentLimit(String(d.settings?.guardian_entertainment_daily_limit_minutes ?? 60))
+          setGuardianRestQuota(String(
+            d.settings?.guardian_rest_quota_pending ?? d.settings?.guardian_rest_quota_per_day ?? 3
+          ))
           setGuardianDayStartTime(d.settings?.guardian_entertainment_day_start_time || '04:00')
           setPracticeTargetLanguage(d.settings?.practice_target_language || 'Japanese')
           setDatasetTagOptions(d.settings?.dataset_tag_options || ['guardian mode'])
@@ -554,6 +562,22 @@ function App() {
     }
   }
 
+  const handleStartGuardianRest = async () => {
+    setGuardianActionStatus('')
+    const minutes = parsePositiveInt(guardianRestMinutes, 1)
+    if (minutes === null) {
+      setGuardianActionStatus('请输入 1 分钟以上的休息时长。')
+      return
+    }
+    try {
+      await startGuardianBreak(minutes, '回到工作')
+      setGuardianActionStatus('休息已开始。Session 和 Guardian 都会暂停，结束后答题再继续。')
+      applySessionStatus(await getStatus())
+    } catch (e) {
+      setGuardianActionStatus(e.message || '无法开始休息。')
+    }
+  }
+
   const handlePracticeUpload = async (event) => {
     const file = event.target.files?.[0]
     if (!file) return
@@ -653,6 +677,9 @@ function App() {
 
   const getStatusLabel = () => {
     if (!status || !status.active) return '待机中'
+    if (status.paused_for_rest) {
+      return guardianBreakStatus?.active ? '休息中（Session 已暂停）' : '等待恢复'
+    }
     if (!status.latest_judgement) return '等待首次检查'
     if (status.latest_judgement.judgement_status === 'api_error') return 'AI 未连接'
     return status.latest_judgement.on_task ? '专注中' : '疑似分心'
@@ -661,15 +688,21 @@ function App() {
   const handleSaveSettings = async () => {
     if (!selectedModel) return
     const defaultIntervalSeconds = parsePositiveInt(defaultInterval, 5)
+    const postBlockCooldownSeconds = parsePositiveInt(postBlockCooldown, 0)
     const defaultThreshold = parsePositiveInt(defaultTriggerThreshold, 1)
     const guardianIntervalSeconds = parsePositiveInt(guardianInterval, 30)
     const guardianDailyLimitMinutes = parsePositiveInt(guardianDailyEntertainmentLimit, 0)
+    const restQuota = parsePositiveInt(guardianRestQuota, 0)
     if (!nudgePrompt.trim()) {
       setSettingsStatus('提示语不能为空。')
       return
     }
     if (defaultIntervalSeconds === null) {
       setSettingsStatus('默认检测间隔需要是 5 秒以上的整数。')
+      return
+    }
+    if (postBlockCooldownSeconds === null || postBlockCooldownSeconds > 3600) {
+      setSettingsStatus('答完题后的冷却时间需要是 0 到 3600 秒的整数。')
       return
     }
     if (defaultThreshold === null) {
@@ -680,9 +713,12 @@ function App() {
       setSettingsStatus('Guardian mode 检测间隔需要是 30 秒以上的整数。')
       return
     }
-    setSettingsStatus('保存中...')
     if (guardianDailyLimitMinutes === null) {
       setSettingsStatus('Guardian 每日娱乐额度需要是 0 分钟以上的整数。')
+      return
+    }
+    if (restQuota === null || restQuota > 20) {
+      setSettingsStatus('每日休息次数需要是 0 到 20 的整数。')
       return
     }
     if (!/^\d{1,2}:\d{2}$/.test(guardianDayStartTime)) {
@@ -693,12 +729,14 @@ function App() {
       setSettingsStatus('Practice 目标语言不能为空。')
       return
     }
+    setSettingsStatus('保存中...')
     try {
       const res = await saveSettings({
         model: selectedModel,
         supervision_level: selectedSupervisionLevel,
         nudge_prompt: nudgePrompt.trim(),
         default_check_interval_seconds: defaultIntervalSeconds,
+        post_block_cooldown_seconds: postBlockCooldownSeconds,
         trigger_threshold: defaultThreshold,
         whitelist_behaviors: whitelistText
           .replace(/，/g, '\n')
@@ -710,17 +748,22 @@ function App() {
         guardian_check_interval_seconds: guardianIntervalSeconds,
         guardian_entertainment_daily_limit_minutes: guardianDailyLimitMinutes,
         guardian_entertainment_day_start_time: guardianDayStartTime,
+        guardian_rest_quota_per_day: restQuota,
         practice_target_language: practiceTargetLanguage.trim(),
         dataset_tag_options: parsePresetTags(datasetTagOptionsText),
         strict_mode_enabled: true,
       })
       setSettings(res.settings)
       setDefaultInterval(String(res.settings?.default_check_interval_seconds || defaultIntervalSeconds))
+      setPostBlockCooldown(String(res.settings?.post_block_cooldown_seconds ?? postBlockCooldownSeconds))
       setDefaultTriggerThreshold(String(res.settings?.trigger_threshold || defaultThreshold))
       setWhitelistText((res.settings?.whitelist_behaviors || []).join('\n'))
       setGuardianEnabled(Boolean(res.settings?.guardian_mode_enabled ?? guardianEnabled))
       setGuardianInterval(String(res.settings?.guardian_check_interval_seconds || guardianIntervalSeconds))
       setGuardianDailyEntertainmentLimit(String(res.settings?.guardian_entertainment_daily_limit_minutes ?? guardianDailyLimitMinutes))
+      setGuardianRestQuota(String(
+        res.settings?.guardian_rest_quota_pending ?? res.settings?.guardian_rest_quota_per_day ?? restQuota
+      ))
       setGuardianDayStartTime(res.settings?.guardian_entertainment_day_start_time || guardianDayStartTime)
       setPracticeTargetLanguage(res.settings?.practice_target_language || practiceTargetLanguage.trim())
       setDatasetTagOptions(res.settings?.dataset_tag_options || ['guardian mode'])
@@ -807,6 +850,7 @@ function App() {
   const guardianJudgement = guardianStatus?.latest_judgement
   const guardianBreakStatus = guardianStatus?.break_status
   const guardianEntertainmentStatus = guardianStatus?.entertainment_status
+  const guardianRestStatus = guardianStatus?.rest_status
   const guardianStateLabel = guardianBreakStatus?.active
     ? '休息中'
     : guardianStatus?.paused_by_session
@@ -926,8 +970,36 @@ function App() {
                   {guardianEntertainmentStatus?.active ? ` · 本次 ${formatTime(guardianEntertainmentStatus.active_remaining_seconds || 0)}` : ''}
                 </span>
               </div>
+              <div className="info-item">
+                <span className="label">今日休息</span>
+                <span className="value">
+                  剩余 {guardianRestStatus?.remaining ?? '--'} / {guardianRestStatus?.quota ?? 3} 次
+                </span>
+              </div>
             </div>
             <div className="guardian-actions">
+              <div className="input-group guardian-minutes">
+                <label>本次休息（分钟）</label>
+                <input
+                  type="number"
+                  value={guardianRestMinutes}
+                  onChange={(e) => setGuardianRestMinutes(e.target.value)}
+                  min="1"
+                  step="1"
+                />
+              </div>
+              <button
+                type="button"
+                className="btn-small"
+                disabled={
+                  guardianBreakStatus?.active ||
+                  guardianEntertainmentStatus?.active ||
+                  (guardianRestStatus?.remaining || 0) <= 0
+                }
+                onClick={handleStartGuardianRest}
+              >
+                开始休息
+              </button>
               <div className="input-group guardian-minutes">
                 <label>本次娱乐（分钟）</label>
                 <input
@@ -1023,6 +1095,12 @@ function App() {
                 <div className="info-item"><span className="label">Session 档位</span><span className="value">{supervisionLevelOptions.find((level) => level.id === status?.supervision_level)?.label || status?.supervision_level || '--'}</span></div>
                 <div className="info-item"><span className="label">答题阈值</span><span className="value">{status?.trigger_threshold || 1} 次命中</span></div>
                 <div className="info-item"><span className="label">剩余时间</span><span className="value timer">{formatTime(remainingSeconds)}</span></div>
+                {status?.paused_for_rest && guardianBreakStatus?.active && (
+                  <div className="info-item">
+                    <span className="label">休息剩余</span>
+                    <span className="value timer">{formatTime(guardianBreakStatus.remaining_seconds || 0)}</span>
+                  </div>
+                )}
                 <div className="info-item"><span className="label">当前活动</span><span className="value">{status?.latest_judgement?.current_activity || '等待检查...'}</span></div>
                 <div className="info-item"><span className="label">AI 理由</span><span className="value">{statusText}</span></div>
                 <div className="info-item"><span className="label">连续分心</span><span className={`value ${status?.off_task_streak >= (status?.trigger_threshold || 1) ? 'danger' : ''}`}>{status?.off_task_streak ?? 0}</span></div>
@@ -1553,6 +1631,10 @@ function App() {
                 <input type="number" value={defaultInterval} onChange={(e) => setDefaultInterval(e.target.value)} min="5" step="1" />
               </div>
               <div className="input-group">
+                <label>答完题后再等几秒才截图</label>
+                <input type="number" value={postBlockCooldown} onChange={(e) => setPostBlockCooldown(e.target.value)} min="0" step="1" />
+              </div>
+              <div className="input-group">
                 <label>默认命中几次后答题</label>
                 <input type="number" value={defaultTriggerThreshold} onChange={(e) => setDefaultTriggerThreshold(e.target.value)} min="1" step="1" />
               </div>
@@ -1632,9 +1714,25 @@ function App() {
                   onChange={(e) => setGuardianDayStartTime(e.target.value)}
                 />
               </div>
+              <div className="input-group">
+                <label>每日可休息次数</label>
+                <input
+                  type="number"
+                  value={guardianRestQuota}
+                  onChange={(e) => setGuardianRestQuota(e.target.value)}
+                  min="0"
+                  max="20"
+                  step="1"
+                />
+              </div>
             </div>
             <p className="settings-current">
-              Guardian mode 独立于 Session，常驻检测明显娱乐行为：小说、游戏、漫画、色情内容。
+              {settings?.guardian_rest_quota_pending != null
+                ? `今日生效 ${settings.guardian_rest_quota_per_day} 次；将于 ${settings.guardian_rest_quota_pending_day} 起改为 ${settings.guardian_rest_quota_pending} 次。`
+                : `今日生效 ${settings?.guardian_rest_quota_per_day ?? 3} 次。修改次数会在下一个 Guardian 日（按上面的「新一天开始时间」）才生效。`}
+            </p>
+            <p className="settings-current">
+              Guardian mode 独立于 Session。休息次数用完后，打断仍可答题回到 Guardian，但不能再开新的休息。
             </p>
           </div>
           <button className="btn-start" onClick={handleSaveSettings}>保存设置</button>

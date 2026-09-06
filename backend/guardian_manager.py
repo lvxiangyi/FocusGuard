@@ -1,5 +1,6 @@
 import asyncio
 import json
+import time
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -7,14 +8,17 @@ from typing import Optional
 
 from blocker_window import blocker
 from data_paths import GUARDIAN_LOG_FILE, GUARDIAN_SCREENSHOT_DIR, GUARDIAN_STATE_FILE
-from screenshot import take_screenshot
+from screenshot import capture_screenshot, reused_judgement, should_reuse_previous
 from settings_manager import (
     get_guardian_check_interval_seconds,
     get_guardian_entertainment_daily_limit_minutes,
     get_guardian_entertainment_day_start_time,
+    get_guardian_rest_quota_per_day,
     get_nudge_prompt,
+    get_post_block_cooldown_seconds,
     is_guardian_mode_enabled,
 )
+from time_warning import remaining_seconds_until, sleep_with_five_minute_warning
 from vision_judge import judge_guardian_screenshot
 
 
@@ -33,6 +37,9 @@ class GuardianManager:
         self.latest_screenshot_path: Optional[str] = None
         self.last_checked_at: Optional[str] = None
         self.pending_break: Optional[dict] = None
+        self._block_was_showing: bool = False
+        self._next_check_at: float = 0.0
+        self._last_screenshot_thumb = None
 
     def start(self):
         if self._task and not self._task.done():
@@ -63,6 +70,7 @@ class GuardianManager:
             "paused_by_session": paused_by_session,
             "break_status": break_status,
             "entertainment_status": entertainment_status,
+            "rest_status": self._rest_status(),
             "check_interval_seconds": get_guardian_check_interval_seconds(),
             "latest_judgement": self.latest_judgement,
             "latest_screenshot_path": self.latest_screenshot_path,
@@ -71,10 +79,25 @@ class GuardianManager:
         }
 
     async def _loop(self):
+        await asyncio.sleep(get_guardian_check_interval_seconds())
         while True:
-            interval = get_guardian_check_interval_seconds()
-            await asyncio.sleep(interval)
             try:
+                showing = bool(blocker.is_showing)
+                if showing:
+                    self._block_was_showing = True
+                    await asyncio.sleep(1)
+                    continue
+                if self._block_was_showing:
+                    self._block_was_showing = False
+                    delay = max(0, int(get_post_block_cooldown_seconds()))
+                    self._next_check_at = time.time() + delay
+                    if delay:
+                        print(f"[guardian] Post-block cooldown {delay}s before next screenshot.")
+                now = time.time()
+                if now < self._next_check_at:
+                    await asyncio.sleep(min(1.0, self._next_check_at - now))
+                    continue
+
                 self._finalize_expired_entertainment_if_needed()
                 if (
                     is_guardian_mode_enabled()
@@ -83,8 +106,12 @@ class GuardianManager:
                     and not blocker.is_showing
                 ):
                     await self._check_once()
+                await asyncio.sleep(get_guardian_check_interval_seconds())
+            except asyncio.CancelledError:
+                raise
             except Exception as e:
                 print(f"[guardian] Error: {e}")
+                await asyncio.sleep(1)
 
     def _is_session_active(self) -> bool:
         try:
@@ -97,6 +124,11 @@ class GuardianManager:
         if self.pending_break:
             self.cancel_break()
         blocker.dismiss()
+        try:
+            from session_manager import session_manager
+            session_manager.resume_after_rest()
+        except Exception as e:
+            print(f"[guardian] Could not resume session after rest: {e}")
 
     def start_break(self, break_minutes: int, minimum_next_step: str) -> dict:
         step = (minimum_next_step or "").strip()
@@ -104,23 +136,66 @@ class GuardianManager:
             raise ValueError("请输入休息后要做的最小下一步。")
         if break_minutes <= 0:
             raise ValueError("休息时长需要是正整数。")
+        if self._entertainment_status().get("active"):
+            raise ValueError("娱乐时间进行中，请先结束娱乐再休息。")
+        if self.pending_break:
+            raise ValueError("已经在休息中。")
+
+        rest = self._consume_rest_token()
         now = datetime.now().astimezone()
         ends_at = now + timedelta(minutes=break_minutes)
         payload = {
             "break_id": str(uuid.uuid4())[:8],
-            "task": "Guardian mode",
-            "activity": "Guardian 休息",
+            "task": "休息",
+            "activity": "休息",
             "break_minutes": break_minutes,
             "minimum_next_step": step,
             "started_at": now.isoformat(),
             "ends_at": ends_at.isoformat(),
+            "rest_used": rest["used_count"],
+            "rest_quota": rest["quota"],
         }
         self.pending_break = payload
         if self._break_task and not self._break_task.done():
             self._break_task.cancel()
-        self._break_task = asyncio.create_task(self._break_timer(payload.copy()))
+        timer = self._break_timer(payload.copy())
+        try:
+            self._break_task = asyncio.get_running_loop().create_task(timer)
+        except RuntimeError:
+            timer.close()
+            self._break_task = None
+        try:
+            from session_manager import session_manager
+            session_manager.pause_for_rest()
+        except Exception as e:
+            print(f"[guardian] Could not pause session for rest: {e}")
         blocker.dismiss()
         return payload
+
+    def _consume_rest_token(self) -> dict:
+        state = self._normalized_state()
+        rest = state["rest"]
+        quota = get_guardian_rest_quota_per_day()
+        used = int(rest.get("used_count", 0))
+        if used >= quota:
+            raise ValueError(
+                f"今日 Guardian 休息次数已用完（{quota} 次）。次数只能提前一天在设置里修改。"
+            )
+        rest["used_count"] = used + 1
+        self._save_state(state)
+        return {"used_count": rest["used_count"], "quota": quota, "remaining": quota - rest["used_count"]}
+
+    def _rest_status(self) -> dict:
+        state = self._normalized_state()
+        rest = state["rest"]
+        quota = get_guardian_rest_quota_per_day()
+        used = int(rest.get("used_count", 0))
+        return {
+            "day_key": rest.get("day_key"),
+            "quota": quota,
+            "used_count": used,
+            "remaining": max(0, quota - used),
+        }
 
     def cancel_break(self):
         self.pending_break = None
@@ -184,20 +259,24 @@ class GuardianManager:
 
     async def _break_timer(self, payload: dict):
         try:
-            seconds = max(1, int(payload["break_minutes"]) * 60)
-            if seconds > 5 * 60:
-                await asyncio.sleep(seconds - 5 * 60)
-                blocker.show_message(
-                    "Guardian 休息提醒",
-                    "休息时间还剩 5 分钟。请慢慢收尾，准备回到工作。",
-                )
-                await asyncio.sleep(5 * 60)
-            else:
-                await asyncio.sleep(seconds)
+            remaining = remaining_seconds_until(payload["ends_at"]) if payload.get("ends_at") else 0
+            if remaining <= 0:
+                remaining = max(1, int(payload["break_minutes"]) * 60)
+            await sleep_with_five_minute_warning(
+                remaining,
+                "休息提醒",
+                "休息时间还剩 5 分钟。请慢慢收尾，准备回到工作。",
+                ends_at=payload.get("ends_at"),
+            )
             self.pending_break = None
+            try:
+                from session_manager import session_manager
+                session_manager.resume_after_rest()
+            except Exception as e:
+                print(f"[guardian] Could not resume session after rest timer: {e}")
             blocker.show_break_end_translation({
                 **payload,
-                "activity": "Guardian 休息结束",
+                "activity": "休息结束",
                 "minimum_next_step": payload.get("minimum_next_step", ""),
                 "guardian_mode": True,
                 "translation_count": 3,
@@ -221,9 +300,13 @@ class GuardianManager:
 
     async def _entertainment_timer(self, session_id: str, ends_at: str):
         try:
-            end_time = datetime.fromisoformat(ends_at)
-            seconds = max(1, int((end_time - datetime.now().astimezone()).total_seconds()))
-            await asyncio.sleep(seconds)
+            remaining = remaining_seconds_until(ends_at)
+            await sleep_with_five_minute_warning(
+                remaining,
+                "娱乐提醒",
+                "娱乐时间还剩 5 分钟。请慢慢收尾，准备回到工作。",
+                ends_at=ends_at,
+            )
             self._finish_entertainment_due(session_id=session_id)
         except asyncio.CancelledError:
             pass
@@ -274,9 +357,11 @@ class GuardianManager:
         )
         state["entertainment"]["active"] = None
         self._save_state(state)
-        if self._entertainment_task and not self._entertainment_task.done():
-            self._entertainment_task.cancel()
+        task = self._entertainment_task
         self._entertainment_task = None
+        current = asyncio.current_task()
+        if task and not task.done() and task is not current:
+            task.cancel()
         if not blocker.is_showing and not self._is_session_active():
             blocker.show_break_end_translation({
                 "task": "Guardian mode",
@@ -361,9 +446,21 @@ class GuardianManager:
             self._save_state(state)
         entertainment.setdefault("used_seconds", 0)
         entertainment.setdefault("active", None)
+        rest = state.setdefault("rest", {})
+        if rest.get("day_key") != today_key and not self.pending_break:
+            rest.clear()
+            rest.update({"day_key": today_key, "used_count": 0})
+            self._save_state(state)
+        rest.setdefault("day_key", today_key)
+        rest.setdefault("used_count", 0)
         return state
 
     def _load_state(self) -> dict:
+        today_key = self._logical_day_key(datetime.now().astimezone())
+        empty = {
+            "entertainment": {"day_key": today_key, "used_seconds": 0, "active": None},
+            "rest": {"day_key": today_key, "used_count": 0},
+        }
         if GUARDIAN_STATE_FILE.exists():
             try:
                 with open(GUARDIAN_STATE_FILE, "r", encoding="utf-8") as f:
@@ -372,7 +469,7 @@ class GuardianManager:
                     return state
             except Exception as e:
                 print(f"[guardian] Could not read state: {e}")
-        return {"entertainment": {"day_key": self._logical_day_key(datetime.now().astimezone()), "used_seconds": 0, "active": None}}
+        return empty
 
     def _save_state(self, state: dict):
         try:
@@ -392,8 +489,13 @@ class GuardianManager:
 
     async def _check_once(self):
         screenshot_path = self._next_screenshot_path()
-        take_screenshot(output_path=screenshot_path)
-        result = judge_guardian_screenshot(screenshot_path)
+        _path, thumb = capture_screenshot(output_path=screenshot_path)
+        if should_reuse_previous(self._last_screenshot_thumb, thumb, self.latest_judgement):
+            result = reused_judgement(self.latest_judgement)
+            print("[guardian] Screenshot nearly unchanged; reusing previous judgement.")
+        else:
+            result = judge_guardian_screenshot(screenshot_path)
+        self._last_screenshot_thumb = thumb
         if result.get("judgement_status") == "api_error":
             self.latest_judgement = result
             self.latest_screenshot_path = screenshot_path

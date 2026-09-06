@@ -105,6 +105,30 @@ class RetrieveTests(unittest.TestCase):
         self.assertEqual(hits[0]["id"], "same")
         self.assertEqual(hits[0]["retrieval_bucket"], "same_task")
 
+    def test_session_keeps_best_same_task_even_if_image_is_weak(self):
+        store = _FakeStore(
+            [
+                {
+                    "id": "desktop",
+                    "mode": "session",
+                    "task": "study interview",
+                    "ai_activity": "Desktop background with icons",
+                    "human_reason": "blank or desktop can be between tasks",
+                    "image_hash": "0000",
+                    "human_label": "on_task",
+                    "split": "train",
+                },
+            ]
+        )
+        hits = retrieve_similar(
+            store,
+            mode="session",
+            task="study interview",
+            image_hash="ffff",
+            k=3,
+        )
+        self.assertEqual([h["id"] for h in hits], ["desktop"])
+
     def test_hash_similarity_bounds(self):
         self.assertEqual(hash_similarity("ffff", "ffff"), 1.0)
         self.assertEqual(hash_similarity("", "ffff"), 0.0)

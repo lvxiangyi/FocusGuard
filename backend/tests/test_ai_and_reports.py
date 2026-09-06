@@ -134,3 +134,47 @@ class SessionOverlayPauseTests(unittest.TestCase):
         remaining = manager.get_remaining_seconds()
         self.assertGreaterEqual(remaining, 8)
         self.assertLessEqual(remaining, 11)
+
+    def test_pause_for_rest_freezes_remaining_seconds(self):
+        manager = SessionManager()
+        manager.active = True
+        manager.duration_minutes = 1
+        manager.start_time = time.time() - 10
+
+        with patch.object(manager, "_rest_still_active", return_value=True):
+            self.assertTrue(manager.pause_for_rest())
+            first = manager.get_remaining_seconds()
+            time.sleep(0.3)
+            second = manager.get_remaining_seconds()
+            self.assertEqual(first, second)
+            self.assertTrue(manager.get_status()["paused_for_rest"])
+
+        manager.resume_after_rest()
+        self.assertFalse(manager.paused_for_rest)
+        self.assertAlmostEqual(first, manager.get_remaining_seconds(), delta=1)
+
+    def test_acknowledge_resumes_rest_pause(self):
+        manager = SessionManager()
+        manager.active = True
+        manager.duration_minutes = 1
+        manager.start_time = time.time() - 10
+        with patch.object(manager, "_rest_still_active", return_value=True):
+            manager.pause_for_rest()
+        with patch("session_manager.blocker") as overlay:
+            overlay.is_showing = False
+            overlay.dismiss = lambda: None
+            manager.acknowledge_block()
+        self.assertFalse(manager.paused_for_rest)
+
+    def test_status_releases_stale_rest_pause_when_rest_already_ended(self):
+        manager = SessionManager()
+        manager.active = True
+        manager.duration_minutes = 1
+        manager.start_time = time.time() - 10
+        manager.pause_for_rest()
+        with patch.object(manager, "_rest_still_active", return_value=False), patch(
+            "session_manager.blocker"
+        ) as overlay:
+            overlay.is_showing = False
+            status = manager.get_status()
+        self.assertFalse(status["paused_for_rest"])

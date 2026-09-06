@@ -4,24 +4,47 @@ When the user is distracted, they must answer a quiz to continue.
 Wrong answers are recorded for review.
 """
 
-import os
 import json
 import random
 import uuid
 import re
 from datetime import datetime
 from pathlib import Path
-from openai import OpenAI
 from dotenv import load_dotenv
 from data_paths import ENV_FILE, LOGS_DIR, PRACTICE_ATTEMPTS_FILE, PRACTICE_DIR, PRACTICE_STATE_FILE, PROJECT_ROOT
+from llm_client import extra_body_for_model, get_client, has_api_key, message_text
 from settings_manager import get_practice_source_path, get_practice_target_language, get_selected_model, save_settings
 
 load_dotenv(dotenv_path=ENV_FILE)
 
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
-OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
-
 WRONG_ANSWERS_FILE = LOGS_DIR / "wrong_answers.json"
+
+
+def _llm_complete(messages, max_tokens: int):
+    model = get_selected_model()
+    kwargs = {
+        "model": model,
+        "messages": messages,
+        "max_tokens": max_tokens,
+    }
+    extra = extra_body_for_model(model)
+    if extra:
+        kwargs["extra_body"] = extra
+    print(f"[quiz_generator] Using model: {model}")
+    return get_client().chat.completions.create(**kwargs), model
+
+
+def _parse_llm_json(response) -> dict:
+    content = message_text(response)
+    if content.startswith("```"):
+        content = content.split("\n", 1)[1] if "\n" in content else content[3:]
+        content = content.rsplit("```", 1)[0].strip()
+        if content.lower().startswith("json"):
+            content = content[4:].strip()
+    parsed = json.loads(content)
+    if not isinstance(parsed, dict):
+        raise ValueError("Model returned non-object JSON.")
+    return parsed
 
 QUIZ_PROMPT = """You are a quiz generator for a study assistant app.
 
@@ -69,6 +92,23 @@ Return JSON only:
   "feedback": "one short sentence",
   "model_translation": "a concise reference translation in {target_language}",
   "explanation": "1-2 sentences: key phrase, why it is accepted or rejected"
+}}
+"""
+
+TRANSLATION_EXPLAIN_PROMPT = """You are a language tutor. The student could not translate this sentence and asked for the answer.
+
+Source text:
+"{source_text}"
+
+Target language:
+"{target_language}"
+
+Give a correct reference translation and a teaching explanation in Chinese.
+
+Return JSON only:
+{{
+  "model_translation": "the full translation in {target_language}",
+  "explanation": "2-4 Chinese sentences: key words/grammar and why this translation is correct"
 }}
 """
 
@@ -168,29 +208,16 @@ def get_wrong_answers() -> list:
 
 def generate_quiz(task: str) -> dict:
     """Generate a quiz question related to the user's task."""
-    if not OPENROUTER_API_KEY or OPENROUTER_API_KEY == "your_api_key_here":
+    if not has_api_key():
         return _fallback_quiz(task)
 
     try:
-        client = OpenAI(api_key=OPENROUTER_API_KEY, base_url=OPENROUTER_BASE_URL)
-        model = get_selected_model()
-        print(f"[quiz_generator] Using model: {model}")
-
-        response = client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "user", "content": QUIZ_PROMPT.format(task=task)}
-            ],
-            max_tokens=300,
+        response, model = _llm_complete(
+            [{"role": "user", "content": QUIZ_PROMPT.format(task=task)}],
+            300,
         )
 
-        content = response.choices[0].message.content.strip()
-        if content.startswith("```"):
-            content = content.split("\n", 1)[1]
-            content = content.rsplit("```", 1)[0]
-
-        result = json.loads(content)
-        return result
+        return _parse_llm_json(response)
 
     except Exception as e:
         print(f"[quiz_generator] Error: {e}, using fallback")
@@ -372,57 +399,6 @@ def _looks_like_romaji(value: str, source_text: str) -> bool:
     )
 
 
-def grade_translation_answer(source_text: str, user_answer: str) -> dict:
-    """Grade an English-to-Japanese answer with AI when available."""
-    answer = (user_answer or "").strip()
-    if not answer:
-        return {"accepted": False, "score": 0, "feedback": "翻訳を入力してください。", "model": "local"}
-
-    if not OPENROUTER_API_KEY or OPENROUTER_API_KEY == "your_api_key_here":
-        accepted = (_looks_like_japanese(answer) and len(answer) >= 6) or _looks_like_romaji(answer, source_text)
-        return {
-            "accepted": accepted,
-            "score": 0.7 if accepted else 0.2,
-            "feedback": "AI未接続のため、簡易チェックで判定しました。" if accepted else "日本語またはローマ字の翻訳を入力してください。",
-            "model": "local-fallback",
-        }
-
-    try:
-        client = OpenAI(api_key=OPENROUTER_API_KEY, base_url=OPENROUTER_BASE_URL)
-        model = get_selected_model()
-        print(f"[quiz_generator] Using model for translation grading: {model}")
-
-        response = client.chat.completions.create(
-            model=model,
-            messages=[
-                {
-                    "role": "user",
-                    "content": TRANSLATION_GRADE_PROMPT.format(
-                        source_text=source_text,
-                        user_answer=answer,
-                    ),
-                }
-            ],
-            max_tokens=200,
-        )
-
-        content = response.choices[0].message.content.strip()
-        if content.startswith("```"):
-            content = content.split("\n", 1)[1]
-            content = content.rsplit("```", 1)[0]
-
-        result = json.loads(content)
-        result["model"] = model
-        return result
-
-    except Exception as e:
-        print(f"[quiz_generator] Translation grading error: {e}")
-        return {
-            "accepted": False,
-            "score": 0,
-            "feedback": f"AI判定に失敗しました。もう一度試してください。({e})",
-            "model": "api-error",
-        }
 def record_translation_attempt(challenge: dict, user_answer: str, result: dict):
     entry = {
         "attempt_id": str(uuid.uuid4())[:8],
@@ -431,6 +407,7 @@ def record_translation_attempt(challenge: dict, user_answer: str, result: dict):
         "source_text": challenge.get("source_text", ""),
         "user_answer": user_answer,
         "accepted": bool(result.get("accepted", False)),
+        "skipped": bool(result.get("skipped", False)),
         "score": result.get("score", 0),
         "feedback": result.get("feedback", ""),
         "source": challenge.get("source", ""),
@@ -476,7 +453,7 @@ def grade_translation_answer(
             record_translation_attempt(challenge, answer, result)
         return result
 
-    if not OPENROUTER_API_KEY or OPENROUTER_API_KEY == "your_api_key_here":
+    if not has_api_key():
         if target_language.lower() == "japanese":
             accepted = (_looks_like_japanese(answer) and len(answer) >= 6) or _looks_like_romaji(answer, source_text)
         else:
@@ -494,13 +471,8 @@ def grade_translation_answer(
         return result
 
     try:
-        client = OpenAI(api_key=OPENROUTER_API_KEY, base_url=OPENROUTER_BASE_URL)
-        model = get_selected_model()
-        print(f"[quiz_generator] Using model for translation grading: {model}")
-
-        response = client.chat.completions.create(
-            model=model,
-            messages=[
+        response, model = _llm_complete(
+            [
                 {
                     "role": "user",
                     "content": TRANSLATION_GRADE_PROMPT.format(
@@ -510,15 +482,10 @@ def grade_translation_answer(
                     ),
                 }
             ],
-            max_tokens=350,
+            350,
         )
 
-        content = response.choices[0].message.content.strip()
-        if content.startswith("```"):
-            content = content.split("\n", 1)[1]
-            content = content.rsplit("```", 1)[0]
-
-        result = json.loads(content)
+        result = _parse_llm_json(response)
         result["model"] = model
         result.setdefault("model_translation", "")
         result.setdefault("explanation", result.get("feedback", ""))
@@ -537,3 +504,65 @@ def grade_translation_answer(
         if challenge:
             record_translation_attempt(challenge, answer, result)
         return result
+
+
+def explain_translation(
+    source_text: str,
+    target_language: str = None,
+    challenge: dict = None,
+) -> dict:
+    """Return a reference translation and teaching notes. Does not count as a pass."""
+    target_language = (target_language or get_practice_target_language()).strip() or "Japanese"
+    source_text = (source_text or "").strip()
+    if not source_text:
+        return {
+            "accepted": False,
+            "skipped": True,
+            "score": 0,
+            "model_translation": "",
+            "explanation": "没有题目文本，无法生成解析。",
+            "model": "local",
+        }
+
+    result = {
+        "accepted": False,
+        "skipped": True,
+        "score": 0,
+        "model_translation": "",
+        "explanation": "",
+        "model": "local-fallback",
+    }
+
+    if not has_api_key():
+        result["explanation"] = "当前没有连接模型，无法生成参考译文。请稍后重试，或自己再翻译一次。"
+        if challenge:
+            record_translation_attempt(challenge, "答不出来", result)
+        return result
+
+    try:
+        response, model = _llm_complete(
+            [
+                {
+                    "role": "user",
+                    "content": TRANSLATION_EXPLAIN_PROMPT.format(
+                        source_text=source_text,
+                        target_language=target_language,
+                    ),
+                }
+            ],
+            400,
+        )
+        parsed = _parse_llm_json(response)
+        result["model"] = model
+        result["model_translation"] = (parsed.get("model_translation") or "").strip()
+        result["explanation"] = (parsed.get("explanation") or "").strip()
+        if not result["explanation"]:
+            result["explanation"] = "请对照参考译文，注意关键词和语序后再做下一题。"
+    except Exception as e:
+        print(f"[quiz_generator] Translation explain error: {e}")
+        result["model"] = "api-error"
+        result["explanation"] = f"解析生成失败，请再试一次。({e})"
+
+    if challenge:
+        record_translation_attempt(challenge, "答不出来", result)
+    return result

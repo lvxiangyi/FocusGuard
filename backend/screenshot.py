@@ -57,8 +57,64 @@ def _select_monitor(monitors: List[Dict]) -> Dict:
     return monitors[1] if len(monitors) > 1 else monitors[0]
 
 
-def take_screenshot(width: int = 768, output_path: Optional[str] = None) -> str:
-    """Take a screenshot of the cursor's monitor, resize it, and return the file path."""
+# Ignore clock/cursor-sized changes: compare a small grayscale grid.
+COMPARE_SIZE = (64, 36)
+PIXEL_TOLERANCE = 16
+CHANGE_RATIO_THRESHOLD = 0.04
+
+
+def compare_thumbnail(image: Image.Image) -> Image.Image:
+    return image.convert("L").resize(COMPARE_SIZE, Image.BILINEAR)
+
+
+def changed_pixel_ratio(previous: Image.Image, current: Image.Image, pixel_tolerance: int = PIXEL_TOLERANCE) -> float:
+    """Fraction of downscaled pixels that differ by more than pixel_tolerance."""
+    a = compare_thumbnail(previous) if previous.mode != "L" or previous.size != COMPARE_SIZE else previous
+    b = compare_thumbnail(current) if current.mode != "L" or current.size != COMPARE_SIZE else current
+    if a.size != b.size:
+        b = b.resize(a.size, Image.BILINEAR)
+    pixels_a = a.tobytes()
+    pixels_b = b.tobytes()
+    if not pixels_a:
+        return 1.0
+    changed = 0
+    for left, right in zip(pixels_a, pixels_b):
+        if abs(left - right) > pixel_tolerance:
+            changed += 1
+    return changed / len(pixels_a)
+
+
+def reused_judgement(previous: dict) -> dict:
+    """Copy the last conclusion without calling the vision model."""
+    result = dict(previous or {})
+    result["judgement_status"] = "unchanged"
+    result["reused_previous"] = True
+    return result
+
+
+def should_reuse_previous(
+    previous_thumb: Optional[Image.Image],
+    current_thumb: Optional[Image.Image],
+    previous_result: Optional[dict],
+    change_ratio_threshold: float = CHANGE_RATIO_THRESHOLD,
+) -> bool:
+    if previous_thumb is None or current_thumb is None:
+        return False
+    if not previous_result:
+        return False
+    if previous_result.get("judgement_status") == "api_error":
+        return False
+    ratio = changed_pixel_ratio(previous_thumb, current_thumb)
+    reuse = ratio <= change_ratio_threshold
+    print(
+        f"[screenshot] change_ratio={ratio:.4f} "
+        f"threshold={change_ratio_threshold:.4f} reuse={reuse}"
+    )
+    return reuse
+
+
+def capture_screenshot(width: int = 768, output_path: Optional[str] = None) -> Tuple[str, Image.Image]:
+    """Take a screenshot and return (path, comparison thumbnail)."""
     output = Path(output_path) if output_path else SCREENSHOT_DIR / "latest.jpg"
     output.parent.mkdir(parents=True, exist_ok=True)
 
@@ -67,10 +123,15 @@ def take_screenshot(width: int = 768, output_path: Optional[str] = None) -> str:
         raw = sct.grab(monitor)
         img = Image.frombytes("RGB", raw.size, raw.bgra, "raw", "BGRX")
 
-    # Resize to save cost
     ratio = width / img.width
     new_height = int(img.height * ratio)
     img = img.resize((width, new_height), Image.LANCZOS)
-
+    thumb = compare_thumbnail(img)
     img.save(str(output), "JPEG", quality=70)
-    return str(output)
+    return str(output), thumb
+
+
+def take_screenshot(width: int = 768, output_path: Optional[str] = None) -> str:
+    """Take a screenshot of the cursor's monitor, resize it, and return the file path."""
+    path, _thumb = capture_screenshot(width=width, output_path=output_path)
+    return path

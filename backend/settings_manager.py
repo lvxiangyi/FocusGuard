@@ -1,7 +1,7 @@
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 from data_paths import DATA_DIR, PROJECT_ROOT
 
@@ -11,19 +11,39 @@ DEFAULT_PRACTICE_FILE = PROJECT_ROOT.parent / "document" / "0718_Practice.md"
 
 MODEL_OPTIONS: List[Dict[str, str]] = [
     {
-        "id": "google/gemini-2.5-flash-lite",
-        "label": "Gemini 2.5 Flash-Lite",
-        "description": "Fast, low-cost multimodal model for daily monitoring.",
+        "id": "qwen/qwen3.7-flash",
+        "label": "Qwen 3.7 Flash（OpenRouter）",
+        "description": "经 OpenRouter 调用。便宜的视觉模型，适合截图监测。",
     },
     {
-        "id": "openai/gpt-4o",
-        "label": "GPT-4o",
-        "description": "Stronger vision model, usually slower and more expensive.",
+        "id": "z-ai/glm-5.3-flash",
+        "label": "GLM 5.3 Flash（OpenRouter）",
+        "description": "经 OpenRouter 调用。便宜多模态，智谱节点较多。",
+    },
+    {
+        "id": "qwen/qwen3.8-flash",
+        "label": "Qwen 3.8 Flash（OpenRouter）",
+        "description": "经 OpenRouter 调用。稍强的视觉理解，仍较便宜。",
+    },
+    {
+        "id": "minimax/minimax-m3",
+        "label": "MiniMax M3（OpenRouter）",
+        "description": "经 OpenRouter 调用。多模态更细，稍慢更贵。",
+    },
+    {
+        "id": "deepseek/deepseek-v4-flash-vision-exp",
+        "label": "DeepSeek V4 Flash Vision（OpenRouter）",
+        "description": "经 OpenRouter 调用。便宜，但可能被隐私策略拦住。",
+    },
+    {
+        "id": "google/gemini-2.5-flash-lite",
+        "label": "Gemini 2.5 Flash-Lite（OpenRouter）",
+        "description": "经 OpenRouter 调用。更快，国内有时地区不可用。",
     },
     {
         "id": "openai/gpt-4o-mini",
-        "label": "GPT-4o mini",
-        "description": "Lower-cost OpenAI model for quiz/dispute text tasks.",
+        "label": "GPT-4o mini（OpenRouter）",
+        "description": "经 OpenRouter 调用。适合文本题，看图更贵。",
     },
 ]
 
@@ -46,7 +66,7 @@ DEFAULT_NUDGE_PROMPT = (
 )
 
 DEFAULT_SETTINGS = {
-    "model": "google/gemini-2.5-flash-lite",
+    "model": "qwen/qwen3.7-flash",
     "strict_mode_enabled": True,
     "strict_locked_until": None,
     "supervision_level": "not_entertainment",
@@ -58,8 +78,12 @@ DEFAULT_SETTINGS = {
     "guardian_check_interval_seconds": 300,
     "guardian_entertainment_daily_limit_minutes": 60,
     "guardian_entertainment_day_start_time": "04:00",
+    "guardian_rest_quota_per_day": 3,
+    "guardian_rest_quota_pending": None,
+    "guardian_rest_quota_pending_day": None,
     "practice_source_path": str(DEFAULT_PRACTICE_FILE),
     "practice_target_language": "Japanese",
+    "post_block_cooldown_seconds": 300,
     "dataset_tag_options": ["guardian mode"],
     "dataset_retention_days": None,
 }
@@ -143,6 +167,32 @@ def load_settings() -> dict:
         DEFAULT_SETTINGS["guardian_entertainment_day_start_time"],
     )
 
+    try:
+        settings["guardian_rest_quota_per_day"] = max(
+            0,
+            min(20, int(settings.get("guardian_rest_quota_per_day", 3))),
+        )
+    except Exception:
+        settings["guardian_rest_quota_per_day"] = DEFAULT_SETTINGS["guardian_rest_quota_per_day"]
+
+    pending_quota = settings.get("guardian_rest_quota_pending")
+    if pending_quota in ("", None):
+        settings["guardian_rest_quota_pending"] = None
+    else:
+        try:
+            settings["guardian_rest_quota_pending"] = max(0, min(20, int(pending_quota)))
+        except Exception:
+            settings["guardian_rest_quota_pending"] = None
+            settings["guardian_rest_quota_pending_day"] = None
+    pending_day = str(settings.get("guardian_rest_quota_pending_day") or "").strip()
+    settings["guardian_rest_quota_pending_day"] = pending_day or None
+    if settings["guardian_rest_quota_pending"] is None:
+        settings["guardian_rest_quota_pending_day"] = None
+
+    settings, quota_applied = _apply_due_rest_quota(settings)
+    if quota_applied:
+        _write_settings_file(settings)
+
     practice_source_path = str(settings.get("practice_source_path") or "").strip()
     if practice_source_path:
         suffix = Path(practice_source_path).suffix.lower()
@@ -154,6 +204,15 @@ def load_settings() -> dict:
 
     target_language = str(settings.get("practice_target_language") or "").strip()
     settings["practice_target_language"] = target_language[:80] if target_language else "Japanese"
+
+    try:
+        cooldown = int(settings.get(
+            "post_block_cooldown_seconds",
+            DEFAULT_SETTINGS["post_block_cooldown_seconds"],
+        ))
+    except Exception:
+        cooldown = DEFAULT_SETTINGS["post_block_cooldown_seconds"]
+    settings["post_block_cooldown_seconds"] = max(0, min(cooldown, 3600))
 
     retention = settings.get("dataset_retention_days")
     if retention in ("", 0):
@@ -261,6 +320,24 @@ def save_settings(settings_update: dict) -> dict:
             None,
         )
 
+    if "guardian_rest_quota_per_day" in settings_update:
+        try:
+            value = int(settings_update["guardian_rest_quota_per_day"])
+        except Exception:
+            raise ValueError("每日休息次数需要是整数。")
+        if value < 0 or value > 20:
+            raise ValueError("每日休息次数需要在 0 到 20 次之间。")
+        current = int(settings["guardian_rest_quota_per_day"])
+        if value == current:
+            settings["guardian_rest_quota_pending"] = None
+            settings["guardian_rest_quota_pending_day"] = None
+        else:
+            settings["guardian_rest_quota_pending"] = value
+            settings["guardian_rest_quota_pending_day"] = next_guardian_logical_day_key(
+                datetime.now().astimezone(),
+                settings["guardian_entertainment_day_start_time"],
+            )
+
     if "practice_source_path" in settings_update:
         value = str(settings_update["practice_source_path"] or "").strip()
         if not value:
@@ -277,6 +354,17 @@ def save_settings(settings_update: dict) -> dict:
         if len(value) > 80:
             raise ValueError("Practice target language cannot exceed 80 characters.")
         settings["practice_target_language"] = value
+
+    if "post_block_cooldown_seconds" in settings_update:
+        try:
+            cooldown = int(settings_update["post_block_cooldown_seconds"])
+        except Exception:
+            raise ValueError("答完题后的冷却时间需要是整数秒。")
+        if cooldown < 0:
+            raise ValueError("答完题后的冷却时间不能为负数。")
+        if cooldown > 3600:
+            raise ValueError("答完题后的冷却时间不能超过 3600 秒。")
+        settings["post_block_cooldown_seconds"] = cooldown
 
     if "dataset_tag_options" in settings_update:
         tags = _normalize_string_list(settings_update["dataset_tag_options"])
@@ -305,6 +393,42 @@ def save_settings(settings_update: dict) -> dict:
         json.dump(settings, f, ensure_ascii=False, indent=2)
 
     return settings
+
+
+def _write_settings_file(settings: dict):
+    SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
+        json.dump(settings, f, ensure_ascii=False, indent=2)
+
+
+def guardian_logical_day_key(now: datetime, start_text: str) -> str:
+    hour, minute = [int(part) for part in start_text.split(":")]
+    day_start = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    if now < day_start:
+        return (now.date() - timedelta(days=1)).isoformat()
+    return now.date().isoformat()
+
+
+def next_guardian_logical_day_key(now: datetime, start_text: str) -> str:
+    today = guardian_logical_day_key(now, start_text)
+    return (datetime.fromisoformat(today).date() + timedelta(days=1)).isoformat()
+
+
+def _apply_due_rest_quota(settings: dict) -> Tuple[dict, bool]:
+    pending = settings.get("guardian_rest_quota_pending")
+    pending_day = settings.get("guardian_rest_quota_pending_day")
+    if pending is None or not pending_day:
+        return settings, False
+    today = guardian_logical_day_key(
+        datetime.now().astimezone(),
+        settings["guardian_entertainment_day_start_time"],
+    )
+    if str(pending_day) > today:
+        return settings, False
+    settings["guardian_rest_quota_per_day"] = int(pending)
+    settings["guardian_rest_quota_pending"] = None
+    settings["guardian_rest_quota_pending_day"] = None
+    return settings, True
 
 
 def get_selected_model() -> str:
@@ -355,12 +479,20 @@ def get_guardian_entertainment_day_start_time() -> str:
     return load_settings()["guardian_entertainment_day_start_time"]
 
 
+def get_guardian_rest_quota_per_day() -> int:
+    return int(load_settings()["guardian_rest_quota_per_day"])
+
+
 def get_practice_source_path() -> str:
     return load_settings()["practice_source_path"]
 
 
 def get_practice_target_language() -> str:
     return load_settings()["practice_target_language"]
+
+
+def get_post_block_cooldown_seconds() -> int:
+    return int(load_settings()["post_block_cooldown_seconds"])
 
 
 def _normalize_time_string(value, fallback: str = None) -> str:
@@ -415,18 +547,22 @@ def get_supervision_rules(level: str = None) -> str:
     rules = {
         "task_related": (
             "Supervision level: TASK_RELATED.\n"
+            "The declared task IS the decision criterion.\n"
             f"{whitelist_rules}\n"
             "- Hard-blocked content always overrides the declared task and whitelist: porn/adult sexual content, reading novels/web novels, and reading manga/comics are off-task.\n"
             "- Mark on_task true only when the visible activity is clearly and strongly related to the declared task.\n"
+            "- Idle desktop, empty search pages, and unrelated browsing are off-task unless they clearly match a whitelist behavior or a personal calibration case labeled on_task.\n"
             "- Short videos, social media, games, shopping, and unrelated browsing are off-task unless they clearly match a whitelist behavior."
         ),
         "not_entertainment": (
             "Supervision level: NOT_ENTERTAINMENT.\n"
+            "Decide whether the screen is obvious entertainment. Do NOT require the activity to match the declared task.\n"
             f"{whitelist_rules}\n"
-            "- Hard-blocked content always overrides the declared task and whitelist: porn/adult sexual content, reading novels/web novels, and reading manga/comics are off-task.\n"
-            "- Accept work, learning, writing, coding, planning, documentation, research, and other non-entertainment activities.\n"
-            "- Short videos, social media, games, shopping, and obvious entertainment are off-task unless they clearly match a whitelist behavior.\n"
-            "- If unsure and the screen is not clearly entertainment, give the user the benefit of the doubt."
+            "- Hard-blocked content is always off-task: porn/adult sexual content, reading novels/web novels, and reading manga/comics.\n"
+            "- Mark on_task true for idle desktop, wallpaper, icon grid, blank or empty editor, new tab, loading or waiting page, search homepage, looking up a word or definition, email, calendar, notes, documents, coding, research, planning, and other non-entertainment work.\n"
+            "- Short videos, social media feeds, games, shopping, and other obvious entertainment are off-task unless they clearly match a whitelist behavior.\n"
+            "- Do not mark off_task just because the screen is idle, empty, a search page, or unrelated to the declared task.\n"
+            "- If unsure and the screen is not clearly entertainment, mark on_task true."
         ),
     }
     return rules.get(selected, rules[DEFAULT_SETTINGS["supervision_level"]])

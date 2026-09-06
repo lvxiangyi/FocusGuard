@@ -5,6 +5,7 @@ The window is hidden/shown rather than created/destroyed.
 """
 
 import tkinter as tk
+from tkinter import ttk
 import threading
 import requests
 import os
@@ -123,6 +124,21 @@ def _clamp_dialog_size(monitor_rect, width, height, max_fraction=0.92):
     return min(width, max_width), min(height, max_height)
 
 
+def _unlock_content_width(window_width, monitor_width):
+    """Keep review/quiz text inside the current window, not the full monitor."""
+    window_width = max(int(window_width or 0), 1)
+    monitor_width = max(int(monitor_width or 0), 1)
+    usable = window_width if window_width < monitor_width * 0.95 else monitor_width
+    return max(360, min(int(usable * 0.86), usable - 48))
+
+
+def _clamp_review_page(index, total, delta=0):
+    """Keep the review pager on a valid card."""
+    if int(total or 0) <= 0:
+        return 0
+    return max(0, min(int(total) - 1, int(index or 0) + int(delta)))
+
+
 def _raise_window(root):
     try:
         hwnd = wintypes.HWND(root.winfo_id())
@@ -177,6 +193,10 @@ class BlockerWindow:
         self._result_label = None
         self._command_queue = queue.Queue()
         self._unlock_reviews = []
+        self._review_wheel_bound = False
+        self._review_key_bound = False
+        self._review_page = 0
+        self._swipe_origin = None
         # Start persistent tkinter thread
         self._thread = threading.Thread(target=self._tk_thread, daemon=True)
         self._thread.start()
@@ -624,7 +644,7 @@ class BlockerWindow:
         """Render a mandatory translation challenge before the resume prompt."""
         self._clear_content()
         monitor_rect = _cursor_monitor_rect()
-        width, height = _clamp_dialog_size(monitor_rect, _s(760), _s(620))
+        width, height = _clamp_dialog_size(monitor_rect, _s(1280), _s(920), max_fraction=0.94)
         rect = _centered_rect(monitor_rect, width, height)
         _force_window_rect(self._root, rect)
         self._root.deiconify()
@@ -635,12 +655,15 @@ class BlockerWindow:
         self._grab_modal(global_grab=False)
         self._content_frame.place_forget()
         self._content_frame.place(relx=0.5, rely=0.5, anchor="center")
+        guardian_mode = bool(payload.get("guardian_mode"))
         self._load_translation_unlock(
             payload.get("task", ""),
             payload.get("activity", "休息结束"),
             "休息时间已结束，请完成翻译题后回到学习。",
             nudge_message=payload.get("minimum_next_step", ""),
-            resume_payload=None if payload.get("guardian_mode") else payload,
+            recovery=guardian_mode,
+            resume_payload=None if guardian_mode else payload,
+            recovery_mode="guardian" if guardian_mode else "session",
             challenge_total=int(payload.get("translation_count") or 1),
         )
 
@@ -772,18 +795,161 @@ class BlockerWindow:
         except Exception:
             pass
 
+    def _unbind_review_input(self):
+        if self._review_wheel_bound and self._root:
+            for seq in ("<MouseWheel>", "<Button-4>", "<Button-5>", "<Shift-MouseWheel>"):
+                try:
+                    self._root.unbind_all(seq)
+                except Exception:
+                    pass
+            self._review_wheel_bound = False
+        if self._review_key_bound and self._root:
+            for seq in ("<Left>", "<Right>"):
+                try:
+                    self._root.unbind(seq)
+                except Exception:
+                    pass
+            self._review_key_bound = False
+        self._swipe_origin = None
+
     def _clear_content(self):
         """Clear all widgets from content frame."""
+        self._unbind_review_input()
         for widget in self._content_frame.winfo_children():
             widget.destroy()
 
     def _unlock_layout(self):
         monitor_rect = _cursor_monitor_rect()
         _, _, monitor_width, monitor_height = monitor_rect
-        content_width = min(max(int(monitor_width * 0.72), 1100), int(monitor_width * 0.9))
-        title_font = min(max(int(monitor_height * 0.022), 34), 52)
-        body_font = min(max(int(monitor_height * 0.014), 20), 28)
+        try:
+            self._root.update_idletasks()
+            win_w = int(self._root.winfo_width() or 0)
+            win_h = int(self._root.winfo_height() or 0)
+        except Exception:
+            win_w, win_h = 0, 0
+        if win_w < 200:
+            win_w = monitor_width
+        if win_h < 200:
+            win_h = monitor_height
+        content_width = _unlock_content_width(win_w, monitor_width)
+        usable_h = win_h if win_h < monitor_height * 0.95 else monitor_height
+        title_font = min(max(int(usable_h * 0.022), 22), 48)
+        body_font = min(max(int(usable_h * 0.014), 16), 26)
         return content_width, title_font, body_font
+
+    def _ensure_review_window(self):
+        """Give the review dialog enough room without shrinking a fullscreen overlay."""
+        monitor_rect = _cursor_monitor_rect()
+        _, _, monitor_width, monitor_height = monitor_rect
+        try:
+            self._root.update_idletasks()
+            win_w = int(self._root.winfo_width() or 0)
+            win_h = int(self._root.winfo_height() or 0)
+        except Exception:
+            win_w, win_h = 0, 0
+        if win_w >= monitor_width * 0.9 and win_h >= monitor_height * 0.85:
+            return
+        width, height = _clamp_dialog_size(monitor_rect, _s(1280), _s(920), max_fraction=0.94)
+        rect = _centered_rect(monitor_rect, width, height)
+        _force_window_rect(self._root, rect)
+        self._content_frame.place_forget()
+        self._content_frame.place(relx=0.5, rely=0.5, anchor="center")
+
+    def _attach_scrollable(self, parent, height, bg="#15172a", on_horizontal=None):
+        holder = tk.Frame(parent, bg=bg)
+        canvas = tk.Canvas(holder, bg=bg, highlightthickness=0, height=height, bd=0)
+        try:
+            style = ttk.Style(self._root)
+            style.theme_use("clam")
+            style.configure(
+                "Review.Vertical.TScrollbar",
+                troughcolor="#0b1220",
+                background="#cbd5e1",
+                bordercolor="#475569",
+                lightcolor="#e2e8f0",
+                darkcolor="#334155",
+                arrowcolor="#0f172a",
+            )
+            style.map(
+                "Review.Vertical.TScrollbar",
+                background=[("active", "#f8fafc"), ("pressed", "#94a3b8")],
+            )
+            scrollbar = ttk.Scrollbar(
+                holder,
+                orient="vertical",
+                style="Review.Vertical.TScrollbar",
+                command=canvas.yview,
+            )
+        except Exception:
+            scrollbar = tk.Scrollbar(
+                holder,
+                orient="vertical",
+                command=canvas.yview,
+                width=_s(16),
+                troughcolor="#0b1220",
+                bg="#cbd5e1",
+                activebackground="#f8fafc",
+                highlightthickness=0,
+            )
+        inner = tk.Frame(canvas, bg=bg)
+        window_id = canvas.create_window((0, 0), window=inner, anchor="nw")
+
+        def _sync_scroll(_event=None):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+            try:
+                canvas.itemconfigure(window_id, width=max(1, canvas.winfo_width()))
+            except Exception:
+                pass
+
+        inner.bind("<Configure>", _sync_scroll)
+        canvas.bind("<Configure>", _sync_scroll)
+        canvas.configure(yscrollcommand=scrollbar.set)
+        scrollbar.pack(side="right", fill="y")
+        canvas.pack(side="left", fill="both", expand=True)
+
+        def _on_wheel(event):
+            shift = bool(getattr(event, "state", 0) & 0x0001)
+            delta = int(getattr(event, "delta", 0) or 0)
+            if shift and on_horizontal:
+                if delta:
+                    on_horizontal(-1 if delta > 0 else 1)
+                return "break"
+            if delta:
+                canvas.yview_scroll(int(-1 * (delta / 120)), "units")
+            elif getattr(event, "num", None) == 4:
+                canvas.yview_scroll(-1, "units")
+            elif getattr(event, "num", None) == 5:
+                canvas.yview_scroll(1, "units")
+            return "break"
+
+        def _on_press(event):
+            self._swipe_origin = event.x_root
+
+        def _on_release(event):
+            origin = self._swipe_origin
+            self._swipe_origin = None
+            if origin is None or not on_horizontal:
+                return
+            dx = event.x_root - origin
+            if dx <= -72:
+                on_horizontal(1)
+            elif dx >= 72:
+                on_horizontal(-1)
+
+        for widget in (holder, canvas, inner):
+            widget.bind("<MouseWheel>", _on_wheel)
+            widget.bind("<Button-4>", _on_wheel)
+            widget.bind("<Button-5>", _on_wheel)
+            widget.bind("<Shift-MouseWheel>", _on_wheel)
+            widget.bind("<ButtonPress-1>", _on_press)
+            widget.bind("<ButtonRelease-1>", _on_release)
+        if self._root:
+            self._root.bind_all("<MouseWheel>", _on_wheel)
+            self._root.bind_all("<Button-4>", _on_wheel)
+            self._root.bind_all("<Button-5>", _on_wheel)
+            self._root.bind_all("<Shift-MouseWheel>", _on_wheel)
+        self._review_wheel_bound = True
+        return holder, inner, canvas
 
     def _load_quiz(self, task, activity, reason):
         """Show loading state then fetch quiz in background."""
@@ -831,9 +997,10 @@ class BlockerWindow:
         recovery_mode="session",
         challenge_total=1,
         challenge_index=1,
+        keep_progress=False,
     ):
         """Show loading state then fetch a strict-mode translation challenge."""
-        if int(challenge_index or 1) <= 1:
+        if not keep_progress and int(challenge_index or 1) <= 1:
             self._unlock_reviews = []
         self._clear_content()
         frame = self._content_frame
@@ -903,14 +1070,10 @@ class BlockerWindow:
         """Render strict-mode English-to-Japanese unlock task."""
         self._clear_content()
         frame = self._content_frame
-        monitor_rect = _cursor_monitor_rect()
-        _, _, monitor_width, monitor_height = monitor_rect
-        content_width = min(max(int(monitor_width * 0.72), 1100), int(monitor_width * 0.9))
-        title_font = min(max(int(monitor_height * 0.022), 34), 52)
-        body_font = min(max(int(monitor_height * 0.012), 18), 26)
-        source_font = min(max(int(monitor_height * 0.017), 26), 40)
-        input_font = min(max(int(monitor_height * 0.014), 22), 32)
-        answer_width = max(72, min(110, int(content_width / max(10, input_font * 0.58))))
+        content_width, title_font, body_font = self._unlock_layout()
+        source_font = min(max(body_font + 6, 22), 36)
+        input_font = min(max(body_font + 2, 18), 30)
+        answer_width = max(48, min(96, int(content_width / max(10, input_font * 0.58))))
 
         tk.Frame(frame, bg="#0f0f23", width=content_width, height=1).pack()
 
@@ -1004,7 +1167,7 @@ class BlockerWindow:
 
         unlock_widgets = []
 
-        tk.Button(
+        submit_btn = tk.Button(
             button_row,
             text="Submit",
             font=("Segoe UI", body_font, "bold"),
@@ -1031,7 +1194,39 @@ class BlockerWindow:
                 challenge_total,
                 challenge_index,
             ),
-        ).pack(side="left", padx=(0, 10))
+        )
+        submit_btn.pack(side="left", padx=(0, 10))
+        unlock_widgets.append(submit_btn)
+
+        give_up_btn = tk.Button(
+            button_row,
+            text="答不出来",
+            font=("Segoe UI", body_font, "bold"),
+            fg="#ffffff",
+            bg="#7f1d1d",
+            activebackground="#991b1b",
+            activeforeground="#ffffff",
+            relief="flat",
+            padx=28,
+            pady=12,
+            cursor="hand2",
+            command=lambda: self._give_up_translation_unlock(
+                challenge,
+                result_lbl,
+                unlock_widgets,
+                task,
+                activity,
+                reason,
+                nudge_message,
+                recovery,
+                resume_payload,
+                recovery_mode,
+                challenge_total,
+                challenge_index,
+            ),
+        )
+        give_up_btn.pack(side="left", padx=(0, 10))
+        unlock_widgets.append(give_up_btn)
 
         tk.Button(
             button_row,
@@ -1053,9 +1248,15 @@ class BlockerWindow:
     def _show_unlock_complete(self, task, recovery, resume_payload, recovery_mode):
         """After all translation items pass: show review, then work/break."""
         self._clear_content()
+        self._ensure_review_window()
         frame = self._content_frame
         content_width, title_font, body_font = self._unlock_layout()
-        wrap = max(640, content_width - 40)
+        wrap = max(320, content_width - 56)
+        try:
+            win_h = int(self._root.winfo_height() or 720)
+        except Exception:
+            win_h = 720
+        review_height = max(240, int(win_h * 0.58))
 
         tk.Label(
             frame,
@@ -1066,14 +1267,16 @@ class BlockerWindow:
         ).pack(pady=(0, 8))
         tk.Label(
             frame,
-            text="看完解析后，选择回到工作或开始休息。",
+            text=f"看完全部 {len(self._unlock_reviews)} 题解析后，选择回到工作或开始休息。滚轮上下看解析，左右滑动或方向键换题。",
             font=("Segoe UI", body_font),
             fg="#cbd5e1",
             bg="#0f0f23",
-        ).pack(pady=(0, 16))
+            wraplength=wrap,
+            justify="center",
+        ).pack(pady=(0, 12))
 
-        review_box = tk.Frame(frame, bg="#15172a", padx=18, pady=14)
-        review_box.pack(fill="x", pady=(0, 16))
+        review_box = tk.Frame(frame, bg="#15172a", padx=8, pady=8)
+        review_box.pack(fill="both", expand=True, pady=(0, 12))
         if not self._unlock_reviews:
             tk.Label(
                 review_box,
@@ -1083,52 +1286,122 @@ class BlockerWindow:
                 bg="#15172a",
             ).pack(anchor="w")
         else:
-            for i, item in enumerate(self._unlock_reviews, start=1):
-                card = tk.Frame(review_box, bg="#15172a")
-                card.pack(fill="x", pady=(0, 14) if i < len(self._unlock_reviews) else 0)
+            self._review_page = 0
+            nav = tk.Frame(review_box, bg="#15172a")
+            nav.pack(fill="x", pady=(0, 8))
+            page_lbl = tk.Label(
+                nav,
+                text="",
+                font=("Segoe UI", body_font, "bold"),
+                fg="#ffffff",
+                bg="#15172a",
+            )
+            prev_btn = tk.Button(
+                nav,
+                text="← 上一题",
+                font=("Segoe UI", max(14, body_font - 2), "bold"),
+                fg="#0f0f23",
+                bg="#cbd5e1",
+                activebackground="#e2e8f0",
+                relief="flat",
+                padx=16,
+                pady=8,
+                cursor="hand2",
+            )
+            next_btn = tk.Button(
+                nav,
+                text="下一题 →",
+                font=("Segoe UI", max(14, body_font - 2), "bold"),
+                fg="#0f0f23",
+                bg="#cbd5e1",
+                activebackground="#e2e8f0",
+                relief="flat",
+                padx=16,
+                pady=8,
+                cursor="hand2",
+            )
+            prev_btn.pack(side="left")
+            page_lbl.pack(side="left", expand=True)
+            next_btn.pack(side="right")
+
+            holder, inner, canvas = self._attach_scrollable(
+                review_box,
+                review_height,
+                on_horizontal=lambda delta: go_page(delta),
+            )
+            holder.pack(fill="both", expand=True)
+
+            def render_page():
+                for widget in inner.winfo_children():
+                    widget.destroy()
+                item = self._unlock_reviews[self._review_page]
+                card = tk.Frame(inner, bg="#15172a")
+                card.pack(fill="x", padx=10, pady=4)
                 tk.Label(
                     card,
-                    text=f"{i}. {item.get('source_text') or ''}",
+                    text=f"{self._review_page + 1}. {item.get('source_text') or ''}",
                     font=("Segoe UI", body_font, "bold"),
                     fg="#ffffff",
                     bg="#15172a",
                     wraplength=wrap,
                     justify="left",
                     anchor="w",
-                ).pack(anchor="w")
+                ).pack(anchor="w", fill="x")
                 tk.Label(
                     card,
-                    text=f"你的翻译：{item.get('user_answer') or ''}",
-                    font=("Segoe UI", max(16, body_font - 2)),
-                    fg="#94a3b8",
+                    text=f"你的翻译：{item.get('user_answer') or '（未记录）'}",
+                    font=("Segoe UI", max(14, body_font - 2)),
+                    fg="#e2e8f0",
                     bg="#15172a",
                     wraplength=wrap,
                     justify="left",
                     anchor="w",
-                ).pack(anchor="w", pady=(4, 0))
+                ).pack(anchor="w", fill="x", pady=(6, 0))
                 if item.get("model_translation"):
                     tk.Label(
                         card,
                         text=f"参考译文：{item.get('model_translation')}",
-                        font=("Segoe UI", max(16, body_font - 2)),
+                        font=("Segoe UI", max(14, body_font - 2)),
                         fg="#2ecc71",
                         bg="#15172a",
                         wraplength=wrap,
                         justify="left",
                         anchor="w",
-                    ).pack(anchor="w", pady=(2, 0))
+                    ).pack(anchor="w", fill="x", pady=(4, 0))
                 explain = (item.get("explanation") or item.get("feedback") or "").strip()
                 if explain:
                     tk.Label(
                         card,
                         text=f"解析：{explain}",
-                        font=("Segoe UI", max(16, body_font - 2)),
+                        font=("Segoe UI", max(14, body_font - 2)),
                         fg="#f1c40f",
                         bg="#15172a",
                         wraplength=wrap,
                         justify="left",
                         anchor="w",
-                    ).pack(anchor="w", pady=(2, 0))
+                    ).pack(anchor="w", fill="x", pady=(4, 0))
+                total = len(self._unlock_reviews)
+                page_lbl.config(text=f"{self._review_page + 1} / {total}")
+                prev_btn.config(state="normal" if self._review_page > 0 else "disabled")
+                next_btn.config(state="normal" if self._review_page < total - 1 else "disabled")
+                inner.update_idletasks()
+                canvas.yview_moveto(0)
+
+            def go_page(delta):
+                total = len(self._unlock_reviews)
+                nxt = _clamp_review_page(self._review_page, total, delta)
+                if nxt == self._review_page:
+                    return
+                self._review_page = nxt
+                render_page()
+
+            prev_btn.config(command=lambda: go_page(-1))
+            next_btn.config(command=lambda: go_page(1))
+            if self._root:
+                self._root.bind("<Left>", lambda _e: go_page(-1))
+                self._root.bind("<Right>", lambda _e: go_page(1))
+                self._review_key_bound = True
+            render_page()
 
         unlock_widgets = []
         if resume_payload:
@@ -1211,7 +1484,7 @@ class BlockerWindow:
         break_minutes.insert(0, "10")
         break_minutes.pack(side="left", padx=(12, 16), ipady=6)
 
-        error_label = tk.Label(choice_box, text="", font=("Segoe UI", max(16, body_font - 2)), fg="#ff8a80", bg="#15172a", wraplength=max(640, content_width - 40))
+        error_label = tk.Label(choice_box, text="", font=("Segoe UI", max(14, body_font - 2)), fg="#ff8a80", bg="#15172a", wraplength=max(320, content_width - 40))
         error_label.pack(fill="x", pady=(0, 12))
 
         action_row = tk.Frame(choice_box, bg="#15172a")
@@ -1378,6 +1651,189 @@ class BlockerWindow:
         except Exception as e:
             self._command_queue.put(lambda: result_lbl.config(text=f"Grade failed: {e}", fg="#e74c3c"))
 
+    def _set_unlock_widgets_state(self, unlock_widgets, state):
+        for widget in unlock_widgets or []:
+            try:
+                widget.config(state=state)
+            except Exception:
+                pass
+
+    def _give_up_translation_unlock(
+        self,
+        challenge,
+        result_lbl,
+        unlock_widgets,
+        task,
+        activity,
+        reason,
+        nudge_message,
+        recovery,
+        resume_payload,
+        recovery_mode,
+        challenge_total,
+        challenge_index,
+    ):
+        self._set_unlock_widgets_state(unlock_widgets, "disabled")
+        result_lbl.config(text="正在生成正确答案和解析...", fg="#4a9eff")
+        threading.Thread(
+            target=lambda: self._do_translation_explain(
+                challenge,
+                result_lbl,
+                unlock_widgets,
+                task,
+                activity,
+                reason,
+                nudge_message,
+                recovery,
+                resume_payload,
+                recovery_mode,
+                challenge_total,
+                challenge_index,
+            ),
+            daemon=True,
+        ).start()
+
+    def _do_translation_explain(
+        self,
+        challenge,
+        result_lbl,
+        unlock_widgets,
+        task,
+        activity,
+        reason,
+        nudge_message,
+        recovery,
+        resume_payload,
+        recovery_mode,
+        challenge_total,
+        challenge_index,
+    ):
+        try:
+            res = requests.post(
+                f"{BACKEND_URL}/strict/translation/explain",
+                json={
+                    "challenge_id": challenge.get("challenge_id", ""),
+                    "source_text": challenge.get("source_text", ""),
+                    "source": challenge.get("source", ""),
+                    "source_name": challenge.get("source_name", ""),
+                    "item_index": challenge.get("item_index"),
+                    "item_total": challenge.get("item_total"),
+                    "target_language": challenge.get("target_language", ""),
+                },
+                timeout=30,
+            )
+            result = res.json()
+            if res.status_code >= 400:
+                raise RuntimeError(result.get("detail") or res.text)
+            self._command_queue.put(
+                lambda captured=result: self._show_translation_give_up(
+                    challenge,
+                    captured,
+                    task,
+                    activity,
+                    reason,
+                    nudge_message,
+                    recovery,
+                    resume_payload,
+                    recovery_mode,
+                    challenge_total,
+                    challenge_index,
+                )
+            )
+        except Exception as e:
+            error_text = str(e)
+            self._command_queue.put(
+                lambda: (
+                    result_lbl.config(text=f"解析失败：{error_text}", fg="#e74c3c"),
+                    self._set_unlock_widgets_state(unlock_widgets, "normal"),
+                )
+            )
+
+    def _show_translation_give_up(
+        self,
+        challenge,
+        result,
+        task,
+        activity,
+        reason,
+        nudge_message,
+        recovery,
+        resume_payload,
+        recovery_mode,
+        challenge_total,
+        challenge_index,
+    ):
+        """Show the model answer, then load another question without counting a pass."""
+        self._clear_content()
+        frame = self._content_frame
+        content_width, title_font, body_font = self._unlock_layout()
+        wrap = max(320, content_width - 40)
+        source_text = challenge.get("source_text") or ""
+        model_translation = (result.get("model_translation") or "").strip()
+        explanation = (result.get("explanation") or "").strip()
+
+        tk.Label(
+            frame,
+            text=f"本题跳过，不算过关 ({challenge_index}/{max(1, challenge_total)})",
+            font=("Segoe UI", title_font, "bold"),
+            fg="#f1c40f",
+            bg="#0f0f23",
+        ).pack(pady=(0, 12))
+        tk.Label(
+            frame,
+            text=source_text,
+            font=("Segoe UI", body_font, "bold"),
+            fg="#ffffff",
+            bg="#0f0f23",
+            wraplength=wrap,
+            justify="center",
+        ).pack(pady=(0, 16))
+        if model_translation:
+            tk.Label(
+                frame,
+                text=f"参考译文：{model_translation}",
+                font=("Segoe UI", body_font),
+                fg="#2ecc71",
+                bg="#0f0f23",
+                wraplength=wrap,
+                justify="left",
+            ).pack(anchor="w", pady=(0, 10))
+        if explanation:
+            tk.Label(
+                frame,
+                text=f"解析：{explanation}",
+                font=("Segoe UI", body_font),
+                fg="#f1c40f",
+                bg="#0f0f23",
+                wraplength=wrap,
+                justify="left",
+            ).pack(anchor="w", pady=(0, 20))
+        tk.Button(
+            frame,
+            text="下一题",
+            font=("Segoe UI", body_font + 2, "bold"),
+            fg="#0f0f23",
+            bg="#f1c40f",
+            activebackground="#d4ac0d",
+            activeforeground="#0f0f23",
+            relief="flat",
+            padx=40,
+            pady=16,
+            cursor="hand2",
+            command=lambda: self._load_translation_unlock(
+                task,
+                activity,
+                reason,
+                nudge_message=nudge_message,
+                recovery=recovery,
+                resume_payload=resume_payload,
+                recovery_mode=recovery_mode,
+                challenge_total=challenge_total,
+                challenge_index=challenge_index,
+                keep_progress=True,
+            ),
+        ).pack(pady=(8, 0))
+
     def _submit_recovery_work(self, step_entry, error_label, recovery_mode="session"):
         step = step_entry.get().strip()
         if not step:
@@ -1449,6 +1905,23 @@ class BlockerWindow:
                 command=lambda idx=i: self._on_answer(idx, correct_idx, quiz, task),
             ).pack(pady=3)
 
+        tk.Button(
+            btn_frame,
+            text="答不出来",
+            font=("Segoe UI", 14, "bold"),
+            fg="#ffffff",
+            bg="#7f1d1d",
+            activebackground="#991b1b",
+            activeforeground="#ffffff",
+            relief="flat",
+            anchor="w",
+            width=50,
+            pady=10,
+            padx=15,
+            cursor="hand2",
+            command=lambda: self._give_up_quiz(quiz, task),
+        ).pack(pady=(10, 3))
+
         # Result
         self._result_label = tk.Label(frame, text="", font=("Segoe UI", 14), fg="#fff", bg="#0f0f23", wraplength=600)
         self._result_label.pack(pady=(10, 0))
@@ -1488,21 +1961,38 @@ class BlockerWindow:
             ).start()
             self._root.after(4000, lambda: self._load_quiz(task, "", ""))
 
-    def _show_quiz_review(self, quiz, task, selected_idx, correct_idx, passed=True):
+    def _give_up_quiz(self, quiz, task):
+        options = quiz.get("options", [])
+        correct_idx = quiz.get("correct_index", 0)
+        correct_ans = options[correct_idx] if correct_idx < len(options) else "?"
+        threading.Thread(
+            target=self._record_wrong,
+            args=(quiz.get("question", ""), "答不出来", correct_ans, task),
+            daemon=True,
+        ).start()
+        self._show_quiz_review(quiz, task, selected_idx=None, correct_idx=correct_idx, next_question=True)
+
+    def _show_quiz_review(self, quiz, task, selected_idx, correct_idx, passed=True, next_question=False):
         """Keep the question on screen with AI explanation, then a large continue button."""
         self._clear_content()
         frame = self._content_frame
         content_width, title_font, body_font = self._unlock_layout()
-        wrap = max(640, content_width - 40)
+        wrap = max(320, content_width - 40)
         options = quiz.get("options", [])
         labels = ["A", "B", "C", "D"]
-        correct_ans = options[correct_idx] if correct_idx < len(options) else "?"
-        user_ans = options[selected_idx] if selected_idx < len(options) else "?"
+        correct_ans = options[correct_idx] if 0 <= int(correct_idx or 0) < len(options) else "?"
+        if selected_idx is None:
+            user_line = "你的答案：答不出来"
+        else:
+            user_ans = options[selected_idx] if selected_idx < len(options) else "?"
+            label = labels[selected_idx] if selected_idx < 4 else "?"
+            user_line = f"你的答案：{label}. {user_ans}"
         explanation = (quiz.get("explanation") or "").strip()
+        title = "本题跳过，不算过关" if next_question else "题目回顾"
 
         tk.Label(
             frame,
-            text="题目回顾",
+            text=title,
             font=("Segoe UI", title_font, "bold"),
             fg="#ffffff",
             bg="#0f0f23",
@@ -1518,7 +2008,7 @@ class BlockerWindow:
         ).pack(anchor="w", pady=(0, 12))
         tk.Label(
             frame,
-            text=f"你的答案：{labels[selected_idx] if selected_idx < 4 else '?'}. {user_ans}",
+            text=user_line,
             font=("Segoe UI", body_font),
             fg="#94a3b8",
             bg="#0f0f23",
@@ -1527,7 +2017,7 @@ class BlockerWindow:
         ).pack(anchor="w")
         tk.Label(
             frame,
-            text=f"正解：{labels[correct_idx] if correct_idx < 4 else '?'}. {correct_ans}",
+            text=f"正解：{labels[correct_idx] if isinstance(correct_idx, int) and correct_idx < 4 else '?'}. {correct_ans}",
             font=("Segoe UI", body_font),
             fg="#2ecc71",
             bg="#0f0f23",
@@ -1544,20 +2034,21 @@ class BlockerWindow:
                 wraplength=wrap,
                 justify="left",
             ).pack(anchor="w", pady=(0, 20))
-        tk.Button(
+        next_btn = tk.Button(
             frame,
-            text="回到工作",
+            text="下一题" if next_question else "回到工作",
             font=("Segoe UI", body_font + 2, "bold"),
             fg="#0f0f23",
-            bg="#2ecc71",
-            activebackground="#27ae60",
+            bg="#f1c40f" if next_question else "#2ecc71",
+            activebackground="#d4ac0d" if next_question else "#27ae60",
             activeforeground="#0f0f23",
             relief="flat",
             padx=40,
             pady=16,
             cursor="hand2",
-            command=self._correct_dismiss,
-        ).pack(pady=(8, 0))
+            command=(lambda: self._load_quiz(task, "", "")) if next_question else self._correct_dismiss,
+        )
+        next_btn.pack(pady=(8, 0))
 
     def _correct_dismiss(self):
         """Correct answer: hide and acknowledge."""

@@ -68,6 +68,17 @@ export async function startGuardianEntertainment(minutes) {
   });
 }
 
+export async function startGuardianBreak(breakMinutes, minimumNextStep = '回到工作') {
+  return api('/guardian/recovery/break', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      break_minutes: breakMinutes,
+      minimum_next_step: minimumNextStep,
+    }),
+  });
+}
+
 // Schedule APIs
 export async function getSchedules() {
   return api('/schedule/list');

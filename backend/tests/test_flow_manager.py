@@ -60,6 +60,29 @@ class FlowManagerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(report["blocks"][0]["task"], "walk outside")
         self.assertEqual(report["total_break_minutes"], 10)
 
+    async def test_long_break_warns_five_minutes_before_end(self):
+        sleeps = []
+
+        async def fake_sleep(seconds):
+            sleeps.append(seconds)
+
+        with patch("time_warning.asyncio.sleep", side_effect=fake_sleep), patch(
+            "blocker_window.blocker"
+        ) as mock_blocker:
+            self.flow.start_break(
+                break_minutes=12,
+                activity="walk outside",
+                task="product",
+                duration_minutes=25,
+                check_interval_seconds=30,
+                strict_mode=False,
+            )
+            await self.flow._break_task
+
+        self.assertGreaterEqual(sleeps[0], 6 * 60)
+        mock_blocker.show_message.assert_called_once()
+        mock_blocker.show_resume_prompt.assert_called_once()
+
     async def test_manual_start_can_cancel_pending_break_without_later_prompt(self):
         self.flow.start_break(
             break_minutes=10,
