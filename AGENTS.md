@@ -177,6 +177,7 @@ data/personal_bench/
 | `settings.json` | 用户设置（模型、strict 开关、guardian 配额、练习源文件等） |
 
 `docs/MVP.md` 记录正式 MVP 的使用、行为边界、正确性措施与验证结果。
+`docs/CHANGELOG-mvp-cut.md` 记录相对 implement-rag 的分支改动、验证范围及版本回溯。
 
 ### `docs/demos/mvp-v1/` — MVP 界面交互演示（独立 HTML，不接正式后端）
 
