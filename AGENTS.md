@@ -175,8 +175,8 @@ data/personal_bench/
 |---|---|
 | `index.html` | 专注、实时状态、拦截答题、个人案例和偏好设置的语义化页面及弹窗入口。 |
 | `styles.css` | 深蓝侧栏与浅色工作区视觉样式、计时环、响应式布局及键盘焦点样式。 |
-| `app.js` | 六种界面/题目语言独立切换、模拟计时与拦截、纠正判断和本地案例管理。 |
-| `README.md` | 演示范围、使用方式、模拟行为限制和 `mvp-demo-v1.0.0` 版本回溯说明。 |
+| `app.js` | 六种界面/翻译目标语言独立切换、句子翻译与解析、模拟计时和拦截、保留任务归属的案例管理（保存不解锁）。 |
+| `README.md` | 演示范围、使用方式、模拟行为限制和 `mvp-demo-v1.1.0` 版本回溯及行为核对说明。 |
 
 ### 根目录脚本 / 配置文件
 
@@ -204,3 +204,5 @@ data/personal_bench/
 - 2026-09-06 创建本文件，梳理整体目录结构（backend 监控/拦截/采集三块、personal_bench RAG 管线、frontend/electron 壳、data 布局）。
 - 2026-09-06 修复「检查记录图片全是最后一次检查」bug：session 每次检查改为独立时间戳截图文件（screenshot.py 新增 `timestamped_screenshot_path`，session/guardian 共用）；历史指向 `latest.jpg` 的日志行在 recent.py 中标记为无图（原文件已被覆盖）。涉及 backend/screenshot.py、session_manager.py、guardian_manager.py、personal_bench/recent.py。
 - 2026-09-06 新增收紧功能边界的 MVP HTML 交互演示，包含六语界面/答题、专注状态、拦截和个人案例纠正，版本 `mvp-demo-v1.0.0`；涉及 docs/demos/mvp-v1/index.html、styles.css、app.js、README.md。
+
+- 2026-09-06 修订 MVP demo 为句子翻译，纠正案例保存即解锁、历史任务归属、普通纠错暂停及模拟引用数量问题；保留旧标签，新增 `mvp-demo-v1.1.0`，涉及 docs/demos/mvp-v1/index.html、app.js、README.md。

@@ -32,8 +32,6 @@ settingsIntro:['用你习惯的语言，找回自己的节奏。','Your language
 languages:['语言','Languages','言語','언어','Langues','Idiomas'],
 uiLanguage:['界面语言','Interface language','表示言語','화면 언어','Langue de l’interface','Idioma da interface'],
 uiHint:['用于导航、状态和提示。','Navigation, status and messages.','ナビゲーション、状況、メッセージの言語。','탐색, 상태 및 안내에 사용됩니다.','Navigation, états et messages.','Navegação, status e mensagens.'],
-answerLanguage:['答题语言','Question language','問題の言語','문제 언어','Langue des questions','Idioma das perguntas'],
-answerHint:['题目和选项使用此语言，与界面语言独立。','Questions and choices use this language, independently of the interface.','問題と選択肢に使用します。表示言語とは別に設定できます。','화면 언어와 별개로 문제와 선택지에 사용됩니다.','Langue des questions et des choix, indépendante de l’interface.','Idioma das perguntas e opções, independente da interface.'],
 questionPreview:['题目预览','QUESTION PREVIEW','問題プレビュー','문제 미리보기','APERÇU DE QUESTION','PRÉVIA DA PERGUNTA'],
 advanced:['监督细节','Monitoring details','見守りの詳細','집중 확인 설정','Détails du suivi','Detalhes do monitoramento'],
 interval:['检查间隔','Check interval','確認間隔','확인 간격','Intervalle de vérification','Intervalo de verificação'],
@@ -48,9 +46,7 @@ noticed:['AI 注意到','AI NOTICED','AIが検出したこと','AI가 감지한 
 offReason:['正在观看视频，暂未识别出与产品方案的关联。','A video is playing; its connection to the product proposal is unclear.','動画を視聴中ですが、企画書との関連はまだ確認できません。','동영상을 시청 중이며 제품 제안서와의 관련성이 불분명합니다.','Une vidéo est en cours ; son lien avec la proposition produit reste incertain.','Um vídeo está sendo reproduzido; a relação com a proposta ainda não está clara.'],
 actuallyWorking:['其实我在做任务 → 纠正判断','I’m working on my task → Correct this','タスクに取り組んでいます → 判定を修正','작업 중이에요 → 판단 수정','Je travaille sur ma tâche → Corriger','Estou trabalhando na tarefa → Corrigir'],
 smallQuestion:['一道小题，重新出发','A SMALL RESET','小さな問題で、再スタート','간단한 문제로 다시 시작','UNE PETITE PAUSE ACTIVE','UM PEQUENO RECOMEÇO'],
-checkAnswer:['确认答案','Check answer','答えを確認','정답 확인','Vérifier la réponse','Verificar resposta'],
 returnToWork:['回到任务 →','Return to task →','タスクに戻る →','작업으로 돌아가기 →','Reprendre la tâche →','Voltar à tarefa →'],
-quizNote:['演示题目 · 答对后即可返回当前任务','Demo question · Answer correctly to return to your task','デモ問題 · 正解するとタスクに戻れます','예시 문제 · 정답을 맞히면 작업으로 돌아갑니다','Question de démo · Répondez juste pour reprendre','Pergunta de demo · Acerte para voltar à tarefa'],
 correctTitle:['帮 AI 理解这一次','Help the AI understand','今回の状況をAIに伝える','AI가 상황을 이해하도록 도와주세요','Aidez l’IA à comprendre','Ajude a IA a entender'],
 correctIntro:['结合截图和当前任务，告诉我们实际情况。','Use the screen and task context to explain what was happening.','画面とタスクをもとに、実際の状況を教えてください。','화면과 현재 작업을 바탕으로 실제 상황을 알려주세요.','Expliquez la situation en vous appuyant sur l’écran et la tâche.','Explique a situação com base na tela e na tarefa.'],
 illustration:['示意画面 · 非真实截屏','Illustration · Not a real capture','イメージ · 実際の画面ではありません','예시 화면 · 실제 캡처 아님','Illustration · Pas une capture réelle','Ilustração · Não é uma captura real'],
@@ -87,19 +83,32 @@ errorTitle:['AI 暂时无法连接','AI is temporarily unavailable','AIに接続
 errorDescription:['本次检查未完成，不计为分心。点击重试恢复演示。','This check was not completed and is not counted as distraction. Retry to restore the demo.','確認できなかったため脱線には数えません。再試行でデモを復旧します。','확인이 완료되지 않아 집중 이탈로 계산하지 않습니다. 다시 시도해 데모를 복구하세요.','Cette vérification n’est pas comptée comme distraction. Réessayez pour rétablir la démo.','Esta verificação não conta como distração. Tente novamente para restaurar a demo.'],
 retry:['重试连接','Retry connection','接続を再試行','연결 재시도','Réessayer','Tentar novamente'],
 finished:['本次专注已结束。准备好时，再开始一轮。','Session finished. Start another when you’re ready.','セッションが終了しました。準備ができたら次の集中へ。','집중 시간이 끝났어요. 준비되면 다시 시작하세요.','Session terminée. Recommencez quand vous le souhaitez.','Sessão encerrada. Comece outra quando quiser.'],
-pickAnswer:['请先选择一个答案。','Choose an answer first.','答えを選んでください。','먼저 답을 선택하세요.','Choisissez d’abord une réponse.','Escolha uma resposta primeiro.'],
-wrong:['再想一下：先确定一个小步骤，会更容易开始。','Try again: a clear small step makes it easier to begin.','もう一度。小さな一歩を決めると始めやすくなります。','다시 생각해 보세요. 작은 단계를 정하면 시작하기 쉬워요.','Réessayez : une petite étape précise facilite le démarrage.','Tente novamente: um pequeno passo claro facilita começar.'],
-right:['答对了。带着这一个小步骤，回到任务。','Correct. Take that small step back to your task.','正解です。その小さな一歩からタスクに戻りましょう。','정답이에요. 작은 단계부터 작업으로 돌아가세요.','Exact. Reprenez votre tâche avec cette petite étape.','Correto. Retome a tarefa com esse pequeno passo.'],
 savedDate:['保存在此设备','Saved on this device','この端末に保存済み','이 기기에 저장됨','Enregistré sur cet appareil','Salvo neste dispositivo']
 };
-const quizzes = {
-zh:{q:'想开始一项复杂任务，哪种做法更容易迈出第一步？',a:['同时打开多个任务。','把任务拆成一个具体的小步骤。','等到完全有动力再开始。']},
-en:{q:'What makes it easier to start a complex task?',a:['Open several tasks at once.','Break it into one clear, small step.','Wait until you feel fully motivated.']},
-ja:{q:'複雑なタスクに取りかかるには、どの方法がよいでしょう？',a:['複数のタスクを同時に開く。','具体的な小さな一歩に分ける。','やる気が十分に出るまで待つ。']},
-ko:{q:'복잡한 작업을 시작할 때 첫걸음을 쉽게 만드는 방법은?',a:['여러 작업을 동시에 연다.','구체적이고 작은 단계 하나로 나눈다.','의욕이 충분히 생길 때까지 기다린다.']},
-fr:{q:'Comment commencer plus facilement une tâche complexe ?',a:['Ouvrir plusieurs tâches à la fois.','Définir une première petite étape concrète.','Attendre d’être pleinement motivé.']},
-pt:{q:'O que facilita começar uma tarefa complexa?',a:['Abrir várias tarefas ao mesmo tempo.','Dividir em um primeiro passo pequeno e concreto.','Esperar até sentir muita motivação.']}
+const translations = {
+zh:['我会先完成一个小步骤。','我会把注意力带回当前任务。'],
+en:['I will finish one small step first.','I will bring my attention back to my current task.'],
+ja:['まず小さな一歩を終わらせます。','今のタスクに意識を戻します。'],
+ko:['먼저 작은 단계 하나를 완료하겠습니다.','현재 작업에 다시 집중하겠습니다.'],
+fr:['Je vais d’abord terminer une petite étape.','Je vais ramener mon attention sur ma tâche actuelle.'],
+pt:['Vou concluir um pequeno passo primeiro.','Vou voltar minha atenção para a tarefa atual.']
 };
+Object.assign(copy, {
+answerLanguage:['翻译目标语言','Translation target language','翻訳先の言語','번역할 언어','Langue cible','Idioma de destino'],
+answerHint:['把原句译成此语言；原句来自题库，与界面语言无关。','Translate into this language. Source sentences come from the question bank, independently of the interface.','原文をこの言語に訳します。原文は表示言語に関係なく問題集から選びます。','원문을 이 언어로 번역하세요. 원문은 화면 언어와 무관하게 문제집에서 가져옵니다.','Traduisez dans cette langue. Le texte source vient de la banque de phrases, indépendamment de l’interface.','Traduza para este idioma. A frase original vem do banco de questões, independentemente da interface.'],
+yourTranslation:['你的译文','Your translation','あなたの訳文','내 번역','Votre traduction','Sua tradução'],
+referenceTranslation:['参考译文','Reference translation','参考訳','참고 번역','Traduction de référence','Tradução de referência'],
+giveUp:['答不出来，查看解析','I need help · Show explanation','わからない・解説を見る','모르겠어요 · 해설 보기','Voir la correction','Ver a explicação'],
+nextQuestion:['换一句再试 →','Try another sentence →','次の文に挑戦 →','다른 문장 도전 →','Essayer une autre phrase →','Tentar outra frase →'],
+checkAnswer:['提交译文','Submit translation','訳文を提出','번역 제출','Soumettre la traduction','Enviar tradução'],
+quizNote:['演示采用参考译文匹配，不是真实 AI 判分；实际产品应接受意思准确的不同译法。','Demo uses reference matching, not AI grading. The real app should accept equivalent translations.','デモは参考訳との照合です。実際のAI判定では同じ意味の別訳も認めます。','데모는 참고 번역과 비교합니다. 실제 AI는 의미가 같은 다른 번역도 허용해야 합니다.','La démo compare au texte de référence. L’IA réelle doit accepter les traductions équivalentes.','A demo compara com a referência. A IA real deve aceitar traduções equivalentes.'],
+pickAnswer:['请先输入译文。','Enter your translation first.','訳文を入力してください。','먼저 번역을 입력하세요.','Saisissez votre traduction.','Digite sua tradução.'],
+wrong:['演示未匹配到参考译文；这不代表你的翻译错误。可查看解析后换句再试。','No demo match. This does not mean your translation is wrong. View the explanation and try another sentence.','デモの参考訳と一致しませんでした。誤訳とは限りません。解説を見て次の文へ進めます。','데모 참고 번역과 일치하지 않습니다. 오역이라는 뜻은 아닙니다. 해설을 보고 다음 문장에 도전하세요.','Aucune correspondance dans la démo. Votre traduction peut être correcte. Consultez la correction puis essayez une autre phrase.','Sem correspondência na demo. Sua tradução pode estar correta. Veja a explicação e tente outra frase.'],
+right:['演示匹配通过。查看参考译文后回到任务。','Demo match accepted. Review the translation, then return to your task.','デモ照合に合格しました。参考訳を確認してタスクに戻りましょう。','데모 비교를 통과했어요. 참고 번역을 확인하고 작업으로 돌아가세요.','Correspondance acceptée. Consultez la traduction puis reprenez votre tâche.','Correspondência aceita. Revise a tradução e retome a tarefa.'],
+explanation:['这句话表达一个行动意图：保留原句的动作和先后关系即可，不必逐字对应。本题查看答案不算过关，请换句再试。','The sentence expresses an intention. Preserve the action and sequence; a word-for-word translation is not required. Viewing the answer does not pass this question. Try another.','行動の意図を表す文です。動作や順序を保てば直訳でなくても構いません。答えの閲覧は合格に数えません。次の文に挑戦しましょう。','행동 의도를 나타내는 문장입니다. 동작과 순서를 유지하면 직역할 필요는 없습니다. 정답 보기는 통과로 인정되지 않습니다. 다음 문장에 도전하세요.','La phrase exprime une intention. Gardez l’action et l’ordre sans traduire mot à mot. Consulter la réponse ne valide pas la question. Essayez une autre phrase.','A frase expressa uma intenção. Preserve a ação e a sequência, sem precisar traduzir palavra por palavra. Ver a resposta não aprova a questão. Tente outra frase.'],
+caseSavedBlocked:['案例已保存供未来参考；保存反馈不等于异议复核通过，请继续完成翻译。','Example saved for future reference. Saving feedback does not approve an appeal; please finish the translation.','事例を保存しました。保存は異議の承認ではありません。翻訳を続けてください。','사례를 저장했어요. 저장은 이의 승인과 다릅니다. 번역을 완료하세요.','Exemple enregistré. Enregistrer un retour ne valide pas une contestation ; terminez la traduction.','Exemplo salvo. Salvar feedback não aprova uma contestação; conclua a tradução.'],
+simulated:['示例 · 非实时检测','Sample · Not a live check','サンプル・実際の検出ではありません','예시 · 실시간 감지 아님','Exemple · Pas une détection réelle','Exemplo · Não é detecção real']
+});
 const $ = id => document.getElementById(id);
 const key = 'focusguard.mvp-demo.v1';
 let stored = {};
@@ -110,7 +119,7 @@ let examples = Array.isArray(stored.examples) ? stored.examples.filter(x => x &&
   {id:'seed-video',verdict:'on',reason:'',task:'',seed:'video'},
   {id:'seed-document',verdict:'on',reason:'',task:'',seed:'doc'}
 ];
-let view='focus', running=false, seconds=25*60, duration=25, deadline=0, error=false, selected=-1, passed=false, fromBlock=false, recordType='video', nextDeadline=0;
+let view='focus', running=false, seconds=25*60, duration=25, deadline=0, error=false, questionIndex=0, passed=false, revealed=false, fromBlock=false, recordType='video', nextDeadline=0;
 let lastDefaultTask='';
 function t(k,lang=ui){return copy[k]?.[Object.keys(LANGS).indexOf(lang)] ?? k;}
 function persist(){try{localStorage.setItem(key,JSON.stringify({ui,answer,examples,interval:$('interval').value,threshold:$('threshold').value}));}catch(_){ /* file:// or private browsing may disallow storage. */ }}
@@ -125,7 +134,7 @@ function render(){
   ['uiLanguage','settingsUi'].forEach(id=>languageOptions($(id),ui));
   ['answerLanguage','quizLanguage'].forEach(id=>languageOptions($(id),answer));
   $('correctionReason').placeholder=t('reasonPlaceholder');
-  $('questionPreview').textContent=quizzes[answer].q;
+  $('questionPreview').textContent=sourceSentence()+' → '+LANGS[answer];
   changeView(view);renderStatus();renderRecords();renderCases();renderQuiz();
   $('originalJudgment').textContent=t(recordType==='video'?'offTask':'onTask');
 }
@@ -140,11 +149,11 @@ function renderStatus(){
   $('ringProgress').style.strokeDashoffset=703.72*(1-seconds/(duration*60));
   document.querySelectorAll('[data-minutes]').forEach(b=>{b.disabled=running;b.classList.toggle('selected',Number(b.dataset.minutes)===duration);});
   $('statusTitle').textContent=t(error?'errorTitle':running?'focusedTitle':'readyTitle');
-  $('statusDescription').textContent=t(error?'errorDescription':running?'focusedDescription':'readyDescription');
+  $('statusDescription').textContent=running&&!error?t('simulated')+' · '+t('focusedDescription'):t(error?'errorDescription':'readyDescription');
   $('statusIcon').textContent=error?'!':running?'✓':'◎';
   $('statusIcon').style.background=error?'#fff1df':'#edf7f2';
   $('statusIcon').style.color=error?'#ae6b1a':'#24896f';
-  $('referenceCount').textContent=running&&!error?String(Math.min(1,examples.length)):'—';
+  $('referenceCount').textContent=running&&!error?t('simulated'):'—';
   $('nextCheck').textContent=running&&!error?formatTime(Math.max(0,Math.ceil((nextDeadline-Date.now())/1000))):'—';
   $('previewError').textContent=t(error?'retry':'previewError');
 }
@@ -190,31 +199,39 @@ function openCorrection(type,block){
   screen.querySelector('span').textContent=type==='video'?'▶':'▤';
   $('correctionDialog').showModal();
 }
+function sourceLanguage(){return answer==='en'?'zh':'en';}
+function sourceSentence(){return translations[sourceLanguage()][questionIndex];}
+function normalizeTranslation(value){return value.normalize('NFKC').toLowerCase().replace(/[\p{P}\p{Z}\s]/gu,'');}
 function renderQuiz(){
-  const q=quizzes[answer];$('quizQuestion').textContent=q.q;
-  $('quizOptions').replaceChildren(...q.a.map((a,i)=>{const button=document.createElement('button');button.className='quiz-option'+(selected===i?' selected':'');button.setAttribute('aria-pressed',String(selected===i));button.disabled=passed;const badge=document.createElement('b');badge.textContent=String.fromCharCode(65+i);const label=document.createElement('span');label.textContent=a;button.append(badge,label);button.onclick=()=>{selected=i;$('quizFeedback').textContent='';renderQuiz();};return button;}));
-  $('quizQuestion').lang=answer;$('quizOptions').lang=answer;
-  $('quizSubmit').hidden=passed;$('returnToWork').hidden=!passed;
-  $('quizFeedback').textContent=passed?t('right'):'';
+  $('quizQuestion').textContent=sourceSentence();$('quizQuestion').lang=sourceLanguage();
+  $('translationInput').lang=answer;$('translationInput').disabled=passed||revealed;
+  $('translationReview').hidden=!(passed||revealed);
+  $('referenceTranslation').textContent=translations[answer][questionIndex];$('referenceTranslation').lang=answer;
+  $('quizSubmit').hidden=passed||revealed;$('giveUp').hidden=passed||revealed;
+  $('nextQuestion').hidden=!revealed;$('returnToWork').hidden=!passed;
+  $('quizFeedback').textContent=passed?t('right'):revealed?t('explanation'):'';
 }
+function resetQuestion(){passed=false;revealed=false;$('translationInput').value='';renderQuiz();}
 function endSession(){running=false;seconds=duration*60;error=false;renderStatus();toast('finished');}
 document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>changeView(b.dataset.view));
 document.querySelector('.brand[href]').onclick=e=>{e.preventDefault();changeView('focus');};
 document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>$(b.dataset.close).close());
 ['uiLanguage','settingsUi'].forEach(id=>$(id).onchange=e=>{ui=e.target.value;persist();render();});
-['answerLanguage','quizLanguage'].forEach(id=>$(id).onchange=e=>{answer=e.target.value;selected=-1;passed=false;persist();render();});
+['answerLanguage','quizLanguage'].forEach(id=>$(id).onchange=e=>{answer=e.target.value;questionIndex=0;resetQuestion();persist();render();});
 document.querySelectorAll('[data-minutes]').forEach(b=>b.onclick=()=>{if(running)return;duration=Number(b.dataset.minutes);seconds=duration*60;renderStatus();});
 if(['60','180','300'].includes(stored.interval))$('interval').value=stored.interval;
 if(['1','2','3'].includes(stored.threshold))$('threshold').value=stored.threshold;
 ['interval','threshold'].forEach(id=>$(id).onchange=()=>{persist();nextDeadline=Date.now()+Number($('interval').value)*1000;renderStatus();});
 $('sessionAction').onclick=()=>{if(running){endSession();return;}if(!$('task').value.trim()){$('task').value='';$('task').reportValidity();return;}running=true;error=false;deadline=Date.now()+seconds*1000;nextDeadline=Date.now()+Number($('interval').value)*1000;renderStatus();};
 $('previewError').onclick=()=>{error=!error;renderStatus();};
-$('previewBlock').onclick=()=>{selected=-1;passed=false;renderQuiz();$('blockedTask').textContent=$('task').value;$('blockDialog').showModal();};
+$('previewBlock').onclick=()=>{questionIndex=0;resetQuestion();$('blockedTask').textContent=$('task').value;$('blockDialog').showModal();};
 $('blockCorrection').onclick=()=>openCorrection('video',true);
-$('quizSubmit').onclick=()=>{if(selected<0){$('quizFeedback').textContent=t('pickAnswer');return;}if(selected!==1){$('quizFeedback').textContent=t('wrong');return;}passed=true;renderQuiz();$('returnToWork').focus();};
+$('quizSubmit').onclick=()=>{const text=$('translationInput').value.trim();if(!text){$('quizFeedback').textContent=t('pickAnswer');return;}if(normalizeTranslation(text)!==normalizeTranslation(translations[answer][questionIndex])){$('quizFeedback').textContent=t('wrong');return;}passed=true;renderQuiz();$('returnToWork').focus();};
+$('giveUp').onclick=()=>{revealed=true;renderQuiz();};
+$('nextQuestion').onclick=()=>{questionIndex=(questionIndex+1)%2;resetQuestion();$('translationInput').focus();};
 $('returnToWork').onclick=()=>{$('blockDialog').close();};
-$('correctionForm').onsubmit=e=>{e.preventDefault();const reason=$('correctionReason').value.trim();if(!reason){$('correctionReason').value='';$('correctionReason').reportValidity();return;}examples.unshift({id:'case-'+Date.now(),verdict:new FormData(e.target).get('verdict'),task:$('task').value.trim()||t('sampleTask'),reason,seed:recordType});persist();renderCases();renderStatus();$('correctionDialog').close();if(fromBlock && $('blockDialog').open)$('blockDialog').close();toast('saved');};
-// Wall-clock countdown. Demo dialogs freeze the session, as a real blocker would.
+$('correctionForm').onsubmit=e=>{e.preventDefault();const reason=$('correctionReason').value.trim();if(!reason){$('correctionReason').value='';$('correctionReason').reportValidity();return;}examples.unshift({id:'case-'+Date.now(),verdict:new FormData(e.target).get('verdict'),task:fromBlock?$('task').value.trim()||t('sampleTask'):t('sampleTask'),reason,seed:recordType});persist();renderCases();renderStatus();$('correctionDialog').close();if(fromBlock && $('blockDialog').open){$('quizFeedback').textContent=t('caseSavedBlocked');}else{toast('saved');}};
+// Only the blocker (including its nested correction dialog) freezes the session.
 let lastTick=Date.now();
-setInterval(()=>{const now=Date.now(),elapsed=now-lastTick;lastTick=now;if(!running)return;if($('blockDialog').open||$('correctionDialog').open){deadline+=elapsed;nextDeadline+=elapsed;return;}seconds=Math.max(0,Math.ceil((deadline-now)/1000));if(now>=nextDeadline)nextDeadline=now+Number($('interval').value)*1000;if(seconds===0){endSession();return;}renderStatus();},250);
+setInterval(()=>{const now=Date.now(),elapsed=now-lastTick;lastTick=now;if(!running)return;if($('blockDialog').open){deadline+=elapsed;nextDeadline+=elapsed;return;}seconds=Math.max(0,Math.ceil((deadline-now)/1000));if(now>=nextDeadline)nextDeadline=now+Number($('interval').value)*1000;if(seconds===0){endSession();return;}renderStatus();},250);
 render();
