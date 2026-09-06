@@ -11,14 +11,14 @@ def format_precedents_block(hits: Iterable[dict], max_items: int = 3) -> str:
 
     lines = [
         "User-labeled similar past cases (personal calibration). "
-        "Follow each case's human_label. Labels may be allow or interrupt, on_task or off_task. "
-        "These are not automatic exceptions or whitelist entries.",
+        "Follow each case's judge_label. Labels may be allow or interrupt, on_task or off_task. "
+        "These are prior calibration examples, not a blanket entertainment whitelist.",
     ]
     for i, hit in enumerate(items, start=1):
         mode = hit.get("mode", "")
-        label = hit.get("human_label", "")
+        label = hit.get("judge_label") or hit.get("human_label", "")
         task = hit.get("task") or "(none — guardian)"
-        activity = hit.get("ai_activity") or hit.get("human_reason") or ""
+        activity = hit.get("ai_activity") or hit.get("activity") or hit.get("human_reason") or ""
         reason = hit.get("human_reason") or ""
         score = hit.get("retrieval_score")
         score_txt = f", similarity={score}" if score is not None else ""

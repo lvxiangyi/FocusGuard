@@ -12,6 +12,7 @@ from ai_status_manager import (
 )
 from settings_manager import get_selected_model, get_supervision_rules
 from llm_client import extra_body_for_model, get_client, message_text, missing_key_message
+from whitelist import apply_whitelist_override
 
 JUDGE_MAX_ATTEMPTS = 3
 
@@ -100,7 +101,7 @@ These are OR conditions. If any one category is clearly visible, set should_inte
 Adult/sexual content is only one category; novels, web novels, manga, comics, and games do not need to be adult/sexual to trigger.
 
 Do not interrupt for normal work, study, coding, writing, documentation, chat about work, music players, timers, utilities, or ambiguous screens.
-If a visible activity clearly matches the user-defined whitelist, do not interrupt unless it also clearly falls into one of the four interrupt categories above.
+HARD RULE: if the visible activity matches a user-defined whitelist behavior, set should_interrupt=false. Spotify and other music players match 听音乐. Adult, novel, and manga still interrupt.
 Personal calibration cases below may be allow or interrupt. Follow human_label for a visually similar screen; they are not a whitelist.
 If unsure, do not interrupt.
 
@@ -353,7 +354,8 @@ def should_force_guardian_category_interrupt(category: str, hits: list) -> bool:
     top = hits[0] if hits else None
     if not top:
         return True
-    if str(top.get("human_label") or "").strip().lower() != "allow":
+    top_label = str(top.get("judge_label") or top.get("human_label") or "").strip().lower()
+    if top_label != "allow":
         return True
     try:
         score = float(top.get("retrieval_score") or 0)
@@ -427,7 +429,7 @@ def judge_screenshot(task: str, screenshot_path: str, memory: list = None, super
         result["model"] = model
         result["judgement_status"] = "ok"
         record_ai_success(model)
-        return result
+        return apply_whitelist_override(result)
 
     except Exception as e:
         error = str(e)
@@ -497,7 +499,7 @@ def judge_guardian_screenshot(screenshot_path: str) -> dict:
         result["model"] = model
         result["judgement_status"] = "ok"
         record_ai_success(model)
-        return result
+        return apply_whitelist_override(result)
 
     except Exception as e:
         error = str(e)

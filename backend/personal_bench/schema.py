@@ -9,6 +9,23 @@ SESSION_LABELS = {"on_task", "off_task", "ambiguous"}
 VALID_LABELS = GUARDIAN_LABELS | SESSION_LABELS
 
 
+def judge_label_for(mode: str, label: str) -> str:
+    """Map 0906 activity labels and legacy binary labels to the live judge vocabulary."""
+    mode = (mode or "").strip().lower()
+    raw = (label or "").strip().lower()
+    allowish = {"allow", "on_task", "ontask", "process"}
+    interruptish = {"interrupt", "off_task", "entertainment"}
+    if raw == "not_entertainment_but_notfocus":
+        return "allow" if mode == "guardian" else "off_task"
+    if raw in allowish:
+        return "allow" if mode == "guardian" else "on_task"
+    if raw in interruptish:
+        return "interrupt" if mode == "guardian" else "off_task"
+    if mode == "guardian":
+        return raw if raw in GUARDIAN_LABELS else "allow"
+    return raw if raw in SESSION_LABELS else "on_task"
+
+
 def normalize_label_for_mode(mode: str, label: str) -> str:
     """Validate label for mode; raise ValueError if incompatible."""
     mode = (mode or "").strip().lower()

@@ -100,6 +100,8 @@ function App() {
   const [practiceUploadStatus, setPracticeUploadStatus] = useState('')
   const [datasetTagOptions, setDatasetTagOptions] = useState(['guardian mode'])
   const [datasetTagOptionsText, setDatasetTagOptionsText] = useState('guardian mode')
+  const [personalBenchRoot, setPersonalBenchRoot] = useState('')
+  const [personalBenchStatus, setPersonalBenchStatus] = useState(null)
   const [settingsStatus, setSettingsStatus] = useState('')
   const [captureContext, setCaptureContext] = useState({
     mode: 'guardian',
@@ -265,6 +267,8 @@ function App() {
           setPracticeTargetLanguage(d.settings?.practice_target_language || 'Japanese')
           setDatasetTagOptions(d.settings?.dataset_tag_options || ['guardian mode'])
           setDatasetTagOptionsText((d.settings?.dataset_tag_options || ['guardian mode']).join('\n'))
+          setPersonalBenchRoot(d.settings?.personal_bench_root || '')
+          setPersonalBenchStatus(d.personal_bench || null)
           setSettingsStatus('')
         })
         .catch(() => setSettingsStatus('设置读取失败'))
@@ -751,6 +755,7 @@ function App() {
         guardian_rest_quota_per_day: restQuota,
         practice_target_language: practiceTargetLanguage.trim(),
         dataset_tag_options: parsePresetTags(datasetTagOptionsText),
+        personal_bench_root: personalBenchRoot.trim(),
         strict_mode_enabled: true,
       })
       setSettings(res.settings)
@@ -768,6 +773,8 @@ function App() {
       setPracticeTargetLanguage(res.settings?.practice_target_language || practiceTargetLanguage.trim())
       setDatasetTagOptions(res.settings?.dataset_tag_options || ['guardian mode'])
       setDatasetTagOptionsText((res.settings?.dataset_tag_options || ['guardian mode']).join('\n'))
+      setPersonalBenchRoot(res.settings?.personal_bench_root || '')
+      setPersonalBenchStatus(res.personal_bench || null)
       setSettingsStatus('已保存，下一次 AI 判定生效。')
       setAiStatus(await getAiStatus())
     } catch (e) {
@@ -1657,6 +1664,23 @@ function App() {
             </div>
             <p className="settings-current">
               Dataset 页会把这些标签显示成可点击按钮；新截图默认带 guardian mode。
+            </p>
+            <div className="input-group">
+              <label>Calibration dataset 目录</label>
+              <input
+                type="text"
+                value={personalBenchRoot}
+                onChange={(e) => setPersonalBenchRoot(e.target.value)}
+                placeholder="留空=本机个人数据。也可填 0906_lv_bench 或它的 data 目录"
+              />
+            </div>
+            <p className="settings-current">
+              AI 只检索该目录下的 train 作为 prior calibration，test 不参与判定。
+              {personalBenchStatus?.ok
+                ? ` 当前：${personalBenchStatus.resolved}（train ${personalBenchStatus.train} / test ${personalBenchStatus.test}）`
+                : personalBenchStatus?.error
+                  ? ` 无效：${personalBenchStatus.error}`
+                  : ''}
             </p>
           </div>
           <div className="strict-box">

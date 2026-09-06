@@ -125,6 +125,7 @@ class SettingsRequest(BaseModel):
     post_block_cooldown_seconds: Optional[int] = None
     dataset_tag_options: Optional[List[str]] = None
     dataset_retention_days: Optional[int] = None
+    personal_bench_root: Optional[str] = None
 
 
 class FlowContinueRequest(BaseModel):
@@ -399,7 +400,9 @@ async def api_save_settings(req: SettingsRequest):
         settings = save_settings(update)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    return {"settings": settings, "status": "saved"}
+    payload = get_settings_payload()
+    payload["status"] = "saved"
+    return payload
 
 
 @app.get("/ai/status")

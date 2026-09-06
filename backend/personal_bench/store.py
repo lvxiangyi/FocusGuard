@@ -10,13 +10,38 @@ from pathlib import Path
 from typing import Iterable, Optional
 
 from personal_bench.image_hash import average_hash_hex
-from personal_bench.schema import VALID_SPLITS, normalize_label_for_mode
+from personal_bench.schema import VALID_SPLITS, judge_label_for, normalize_label_for_mode
+
+
+def resolve_dataset_root(raw: str) -> Path:
+    """Accept a dataset folder, or a parent that contains data/train or train."""
+    path = Path(raw).expanduser()
+    if not path.is_absolute():
+        path = (Path.cwd() / path).resolve()
+    else:
+        path = path.resolve()
+    candidates = [path, path / "data", path / "personal_bench", path / "data" / "personal_bench"]
+    for candidate in candidates:
+        if (candidate / "train" / "samples.jsonl").is_file() or (candidate / "train").is_dir():
+            return candidate
+        if (candidate / "test" / "samples.jsonl").is_file() or (candidate / "test").is_dir():
+            return candidate
+    raise ValueError(
+        f"Dataset directory must contain train/ or test/: {path}"
+    )
 
 
 def default_bench_root() -> Path:
     env = os.getenv("PERSONAL_BENCH_ROOT", "").strip()
     if env:
-        return Path(env).expanduser().resolve()
+        return resolve_dataset_root(env)
+    try:
+        from settings_manager import load_settings
+        configured = str(load_settings().get("personal_bench_root") or "").strip()
+        if configured:
+            return resolve_dataset_root(configured)
+    except Exception as error:
+        print(f"[personal_bench] Dataset directory ignored: {error}")
     try:
         from data_paths import PERSONAL_BENCH_DIR
         return Path(PERSONAL_BENCH_DIR)
@@ -64,6 +89,9 @@ class BenchStore:
                     except json.JSONDecodeError:
                         continue
                     item["split"] = s
+                    if not item.get("ai_activity"):
+                        item["ai_activity"] = item.get("activity") or ""
+                    item["judge_label"] = judge_label_for(item.get("mode") or "", item.get("human_label") or "")
                     out.append(item)
         out.sort(key=lambda x: x.get("added_at") or x.get("captured_at") or "", reverse=True)
         return out

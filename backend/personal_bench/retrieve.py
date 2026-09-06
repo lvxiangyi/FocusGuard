@@ -25,7 +25,7 @@ def _sample_text(sample: dict) -> str:
     return " ".join(
         [
             sample.get("task") or "",
-            sample.get("ai_activity") or "",
+            sample.get("ai_activity") or sample.get("activity") or "",
             sample.get("human_reason") or "",
             sample.get("ai_reason") or "",
         ]

@@ -86,10 +86,12 @@ def changed_pixel_ratio(previous: Image.Image, current: Image.Image, pixel_toler
 
 def reused_judgement(previous: dict) -> dict:
     """Copy the last conclusion without calling the vision model."""
+    from whitelist import apply_whitelist_override
+
     result = dict(previous or {})
     result["judgement_status"] = "unchanged"
     result["reused_previous"] = True
-    return result
+    return apply_whitelist_override(result)
 
 
 def should_reuse_previous(

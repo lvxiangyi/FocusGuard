@@ -86,6 +86,7 @@ DEFAULT_SETTINGS = {
     "post_block_cooldown_seconds": 300,
     "dataset_tag_options": ["guardian mode"],
     "dataset_retention_days": None,
+    "personal_bench_root": "",
 }
 
 
@@ -223,6 +224,7 @@ def load_settings() -> dict:
         except Exception:
             retention = None
     settings["dataset_retention_days"] = retention
+    settings["personal_bench_root"] = str(settings.get("personal_bench_root") or "").strip()
 
     return settings
 
@@ -375,6 +377,13 @@ def save_settings(settings_update: dict) -> dict:
         if any(len(item) > 80 for item in tags):
             raise ValueError("单个数据集任务标签不能超过 80 个字符。")
         settings["dataset_tag_options"] = tags
+
+    if "personal_bench_root" in settings_update:
+        raw = str(settings_update.get("personal_bench_root") or "").strip()
+        if raw:
+            from personal_bench.store import resolve_dataset_root
+            resolve_dataset_root(raw)
+        settings["personal_bench_root"] = raw
 
     if "dataset_retention_days" in settings_update:
         value = settings_update["dataset_retention_days"]
@@ -540,8 +549,8 @@ def get_supervision_rules(level: str = None) -> str:
     whitelist_rules = "User-defined whitelist behaviors: none."
     if whitelist:
         whitelist_rules = (
-            "User-defined whitelist behaviors. If the screenshot's main activity clearly matches one of these descriptions, mark on_task true, "
-            "unless the activity is hard-blocked content:\n"
+            "HARD RULE: user-defined whitelist behaviors. If the screenshot's main activity matches one of these, mark on_task true. "
+            "Spotify and other music players match 听音乐. Only porn/novels/manga override the whitelist:\n"
             + "\n".join(f"- {item}" for item in whitelist)
         )
     rules = {
@@ -590,10 +599,37 @@ def get_strict_status() -> dict:
     }
 
 
+def get_personal_bench_status() -> dict:
+    from personal_bench.store import BenchStore, default_bench_root
+
+    configured = str(load_settings().get("personal_bench_root") or "").strip()
+    try:
+        root = default_bench_root()
+        store = BenchStore(root)
+        return {
+            "configured": configured,
+            "resolved": str(root),
+            "ok": True,
+            "train": len(store.list_samples("train")),
+            "test": len(store.list_samples("test")),
+            "error": "",
+        }
+    except Exception as error:
+        return {
+            "configured": configured,
+            "resolved": "",
+            "ok": False,
+            "train": 0,
+            "test": 0,
+            "error": str(error),
+        }
+
+
 def get_settings_payload() -> dict:
     return {
         "settings": load_settings(),
         "model_options": MODEL_OPTIONS,
         "supervision_level_options": SUPERVISION_LEVEL_OPTIONS,
         "strict_status": get_strict_status(),
+        "personal_bench": get_personal_bench_status(),
     }
