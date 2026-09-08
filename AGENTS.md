@@ -31,7 +31,7 @@
 
 ### 当前 MVP 边界
 
-正式界面仅提供专注、最近判定、我的案例、偏好设置；Guardian/日程/Flow 模块与旧数据保留，但启动时不运行这些后台功能。Session 强制使用句子翻译与 task_related 监督，允许用户结束，不弹结束休息流程。界面和翻译目标语言分别支持中、英、日、韩、法、葡；截图与文本发往用户配置的 AI 服务。
+正式界面仅提供专注、最近判定、我的案例、偏好设置；Guardian/日程/Flow 模块与旧数据保留，但启动时不运行这些后台功能。Session 使用 task_related 监督，恢复方式可选快速返回（默认）、填写下一步或句子翻译，允许用户结束，不弹结束休息流程。界面和翻译目标语言分别支持中、英、日、韩、法、葡；截图与文本发往用户配置的 AI 服务。
 
 ### 技术栈与分层（三层本地进程，AI 判定调用外部供应商）
 
@@ -94,8 +94,8 @@ API 一律挂在 `main.py`，按用途前缀：`/session`、`/guardian`、`/flow
 
 | 文件 | 职责（一句话） |
 |---|---|
-| `mvp_service.py` | /mvp 概览、停止、历史反馈、待提交反馈与挑战 API；服务端绑定 session/block/challenge，跳过不放行，保存案例不解锁并使判定缓存失效。 |
-| `mvp_blocker.py` | 常驻 tkinter 内的六语翻译/解析/历史截图纠正界面，线程队列回调、滚动适配、保留译文并支持模型请求期间结束。 |
+| `mvp_service.py` | /mvp 概览、停止、历史反馈、待提交反馈、恢复与翻译挑战 API；服务端绑定 session/block/recovery/challenge，保存案例不解锁并使判定缓存失效。 |
+| `mvp_blocker.py` | 常驻 tkinter 内的快速返回/下一步行动/六语翻译及历史截图纠正界面，线程队列回调、滚动适配并支持异步请求期间结束。 |
 | `mvp_i18n.py` / `ui_strings.json` | React 与 tkinter 共用的六语静态文案及语言名映射，JSON 随后端发布。 |
 | `data_paths.py` | 数据根目录唯一权威：`PROJECT_ROOT`、`DATA_DIR`（`data/{dev,prod}` 由 `AIMONITOR_DATA_ENV` 决定）、logs/screenshots/dataset/guardian/practice/personal_bench 等路径，import 时自动建目录。改路径先改这里 |
 | `run_backend.py` | 打包后入口：为 PyInstaller 冻结 exe 配置 Tcl/Tk 库路径，再 `uvicorn main:app`，端口读 `FOCUSGUARD_PORT`（默认 8899） |
@@ -111,7 +111,7 @@ API 一律挂在 `main.py`，按用途前缀：`/session`、`/guardian`、`/flow
 | `schedule_manager.py` | 日程 CRUD（`schedules.json`）、时间窗解析 |
 | `auto_scheduler.py` | 后台循环：到点的日程自动开 Session，结束记 block |
 | `report_manager.py` | 以「block 记录」聚合每日报告（`daily_reports.json`）+ 每日笔记 |
-| `settings_manager.py` | settings.json 校验与保存，包含六语 ui_language/翻译目标语言；保留模型、白名单及旧监管设置 |
+| `settings_manager.py` | settings.json 校验与保存，包含恢复方式、六语 ui_language/翻译目标语言；保留模型、白名单及旧监管设置 |
 | `ai_status_manager.py` | 最近一次 AI 调用成功/失败/所用模型的内存态 + mock 开关；`/ai/status` |
 | `time_warning.py` | 倒计时拆分（剩 5 分钟经 blocker 弹提醒）等时间工具 |
 | `quiz_generator.py` | 题库与翻译 AI 判分/解析、练习记录落盘；无 API key 不再启发式放行，严格验证 accepted 布尔值，反馈语言跟随界面并设调用超时 |
@@ -150,7 +150,7 @@ data/personal_bench/
 |---|---|
 | `index.html` + `vite.config.js` | Vite 入口/配置（dev :3000） |
 | `src/main.jsx` | React 挂载 |
-| `src/App.jsx` | 正式 MVP 四页桌面界面：专注/最近判定/个人案例/设置；轮询 /mvp/overview、后端权威计时、真实截图纠正与待提交热键截图、六语偏好和异步错误处理 |
+| `src/App.jsx` | 正式 MVP 四页桌面界面：专注/最近判定/个人案例/设置；轮询 /mvp/overview、后端权威计时、真实截图纠正与待提交热键截图、三种恢复方式、六语偏好和异步错误处理 |
 | `src/api.js` | 带超时的后端 fetch 与 /mvp 请求封装；base 默认 `http://127.0.0.1:8000`，支持 `?apiBase=` 查询参数（Electron 加载时注入实际端口） |
 | `src/styles.css` | demo 衍生的深蓝侧栏/浅色工作区、固定桌面框架、自适应计时环与真实图片/错误状态样式 |
 
@@ -220,3 +220,4 @@ data/personal_bench/
 - 2026-09-06 将 MVP 最近判定迁移至独立页面并收紧主页为桌面工作区，新增版本 mvp-demo-v1.2.0；涉及 docs/demos/mvp-v1/index.html、styles.css、README.md。
 
 - 2026-09-06 将 MVP demo 实装为正式四页桌面界面及六语系统翻译窗口，接入真实状态/截图/案例/AI 判分；停用后台 Guardian/日程/Flow，修复错误放行、过期答题与缓存、异步任务及案例并发问题；涉及 frontend/src/App.jsx、api.js、styles.css、electron/main.js、backend/main.py、session_manager.py、settings_manager.py、quiz_generator.py、vision_judge.py、blocker_window.py、mvp_service.py、mvp_blocker.py、mvp_i18n.py、ui_strings.json、personal_bench/recent.py、store.py、tests/test_mvp_service.py、test_mvp_desktop.py、test_quiz_generator.py、package_release.ps1、docs/MVP.md。
+- 2026-09-08 MVP 新增快速返回（默认）、填写下一步与翻译练习三种可持久化恢复方式，并以当前拦截身份校验放行；涉及 backend/settings_manager.py、main.py、mvp_service.py、mvp_blocker.py、ui_strings.json、tests/test_mvp_service.py、test_mvp_desktop.py、frontend/src/App.jsx、docs/MVP.md。

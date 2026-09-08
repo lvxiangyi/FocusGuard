@@ -16,9 +16,49 @@ import quiz_generator
 from mvp_i18n import STRINGS, LANGUAGES
 
 
+class RecoveryTests(unittest.TestCase):
+    def setUp(self):
+        self.manager = SimpleNamespace(
+            active=True, should_block=True, session_id="session-a", block_id="block-a",
+            acknowledge_block=Mock(), record_recovery_action=Mock(),
+        )
+        self.store = service.RecoveryStore(self.manager)
+
+    def test_quick_return_is_default_and_records_completion(self):
+        with patch.object(service, "load_settings", return_value={}):
+            recovery = self.store.get()
+        self.assertEqual(recovery["mode"], "quick_return")
+        self.store.finish(recovery["recovery_id"])
+        self.manager.record_recovery_action.assert_called_once_with("quick_return", "")
+        self.manager.acknowledge_block.assert_called_once()
+
+    def test_next_step_requires_text_and_records_it(self):
+        with patch.object(service, "load_settings", return_value={"recovery_mode": "next_step"}):
+            recovery = self.store.get()
+        with self.assertRaises(ValueError):
+            self.store.finish(recovery["recovery_id"], "  ")
+        self.manager.acknowledge_block.assert_not_called()
+        self.store.finish(recovery["recovery_id"], "Open the outline")
+        self.manager.record_recovery_action.assert_called_once_with("next_step", "Open the outline")
+
+    def test_translation_cannot_use_simple_recovery_finish(self):
+        with patch.object(service, "load_settings", return_value={"recovery_mode": "translation"}):
+            recovery = self.store.get()
+        with self.assertRaises(ValueError):
+            self.store.finish(recovery["recovery_id"])
+        self.manager.acknowledge_block.assert_not_called()
+
+    def test_previous_block_recovery_expires(self):
+        recovery = self.store.get()
+        self.manager.block_id = "block-b"
+        with self.assertRaises(ValueError):
+            self.store.finish(recovery["recovery_id"])
+        self.manager.acknowledge_block.assert_not_called()
+
+
 class ChallengeTests(unittest.TestCase):
     def setUp(self):
-        self.manager = SimpleNamespace(active=True, should_block=True, session_id="session-a", block_id="block-a", acknowledge_block=Mock())
+        self.manager = SimpleNamespace(active=True, should_block=True, session_id="session-a", block_id="block-a", acknowledge_block=Mock(), record_recovery_action=Mock())
         self.store = service.ChallengeStore(self.manager)
 
     def test_six_target_languages_never_copy_source_language(self):
@@ -35,6 +75,7 @@ class ChallengeTests(unittest.TestCase):
         with patch.object(service, "grade_translation_answer", return_value={"accepted": True, "model": "test"}):
             self.store.grade(challenge["challenge_id"], "a valid translation")
         self.store.finish(challenge["challenge_id"])
+        self.manager.record_recovery_action.assert_called_once_with("translation")
         self.manager.acknowledge_block.assert_called_once()
 
     def test_revealing_answer_never_unlocks(self):
@@ -124,10 +165,18 @@ class FeedbackTests(unittest.TestCase):
 
     def test_settings_reject_unsupported_ui_language(self):
         with tempfile.TemporaryDirectory() as temp, patch.object(settings_manager, "SETTINGS_FILE", Path(temp) / "settings.json"):
+            self.assertEqual(settings_manager.load_settings()["ui_language"], "en")
             for language in LANGUAGES:
                 self.assertEqual(settings_manager.save_settings({"ui_language": language})["ui_language"], language)
             with self.assertRaises(ValueError):
                 settings_manager.save_settings({"ui_language": "unknown"})
+
+    def test_settings_validate_recovery_mode(self):
+        with tempfile.TemporaryDirectory() as temp, patch.object(settings_manager, "SETTINGS_FILE", Path(temp) / "settings.json"):
+            for mode in ("quick_return", "next_step", "translation"):
+                self.assertEqual(settings_manager.save_settings({"recovery_mode": mode})["recovery_mode"], mode)
+            with self.assertRaises(ValueError):
+                settings_manager.save_settings({"recovery_mode": "unknown"})
 
 
 class LifecycleTests(unittest.IsolatedAsyncioTestCase):

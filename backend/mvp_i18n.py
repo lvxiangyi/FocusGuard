@@ -9,6 +9,6 @@ LANGUAGES = dict(zip(STRINGS["LANGS"], ["Chinese", "English", "Japanese", "Korea
 def text(key, language=None):
     if language is None:
         from settings_manager import load_settings
-        language = load_settings().get("ui_language", "zh")
-    index = list(LANGUAGES).index(language) if language in LANGUAGES else 0
+        language = load_settings().get("ui_language", "en")
+    index = list(LANGUAGES).index(language) if language in LANGUAGES else list(LANGUAGES).index("en")
     return STRINGS["copy"].get(key, [key] * 6)[index]

@@ -72,7 +72,7 @@ DEFAULT_NUDGE_PROMPT = (
 
 DEFAULT_SETTINGS = {
     "model": "qwen/qwen3.7-flash",
-    "ui_language": "zh",
+    "ui_language": "en",
     "strict_mode_enabled": True,
     "strict_locked_until": None,
     "supervision_level": "not_entertainment",
@@ -89,6 +89,7 @@ DEFAULT_SETTINGS = {
     "guardian_rest_quota_pending_day": None,
     "practice_source_path": str(DEFAULT_PRACTICE_FILE),
     "practice_target_language": "Japanese",
+    "recovery_mode": "quick_return",
     "post_block_cooldown_seconds": 300,
     "dataset_tag_options": ["guardian mode"],
     "dataset_retention_days": None,
@@ -116,7 +117,7 @@ def load_settings() -> dict:
             print(f"[settings] Could not read settings, using defaults: {e}")
 
     if settings.get("ui_language") not in {"zh", "en", "ja", "ko", "fr", "pt"}:
-        settings["ui_language"] = "zh"
+        settings["ui_language"] = "en"
 
     if settings.get("model") not in _valid_model_ids():
         settings["model"] = DEFAULT_SETTINGS["model"]
@@ -213,6 +214,9 @@ def load_settings() -> dict:
 
     target_language = str(settings.get("practice_target_language") or "").strip()
     settings["practice_target_language"] = target_language if target_language in {"Chinese", "English", "Japanese", "Korean", "French", "Portuguese"} else "Japanese"
+
+    recovery_mode = str(settings.get("recovery_mode") or "").strip()
+    settings["recovery_mode"] = recovery_mode if recovery_mode in {"quick_return", "next_step", "translation"} else "quick_return"
 
     try:
         cooldown = int(settings.get(
@@ -368,6 +372,12 @@ def save_settings(settings_update: dict) -> dict:
         if value not in {"Chinese", "English", "Japanese", "Korean", "French", "Portuguese"}:
             raise ValueError("Unsupported translation target language")
         settings["practice_target_language"] = value
+
+    if "recovery_mode" in settings_update:
+        value = str(settings_update["recovery_mode"] or "").strip()
+        if value not in {"quick_return", "next_step", "translation"}:
+            raise ValueError("Unsupported recovery mode")
+        settings["recovery_mode"] = value
 
     if "post_block_cooldown_seconds" in settings_update:
         try:

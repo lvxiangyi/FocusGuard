@@ -1,4 +1,4 @@
-"""Desktop translation surface hosted in the existing persistent tkinter window."""
+"""Desktop recovery surface hosted in the existing persistent tkinter window."""
 import threading
 import tkinter as tk
 from io import BytesIO
@@ -13,8 +13,9 @@ from settings_manager import load_settings
 class MvpBlockerView:
     def __init__(self, host, backend_url, task, activity, reason, monitor_rect):
         self.host, self.url = host, backend_url
-        self.ui = load_settings().get("ui_language", "zh")
+        self.ui = load_settings().get("ui_language", "en")
         self.task = task
+        self.recovery = None
         self.challenge = None
         self.translation_draft = ""
         self.busy = False
@@ -48,7 +49,7 @@ class MvpBlockerView:
         self.label(self.left, activity + "\n" + reason, 12, "#bac8dc", "#17243b", pady=20)
         self.button(self.left, self.t("actuallyWorking"), self.correction, secondary=True)
         self.stop_button = self.button(self.left, self.t("stop"), self.stop, secondary=True)
-        self.load()
+        self.load_recovery()
 
     def t(self, key):
         return text(key, self.ui)
@@ -109,6 +110,43 @@ class MvpBlockerView:
             self.host._command_queue.put(done)
         threading.Thread(target=worker, daemon=True).start()
 
+    def load_recovery(self):
+        self.clear()
+        self.error = self.label(self.right, self.t("loading"))
+        self.button(self.right, self.t("retry"), self.load_recovery, secondary=True)
+        self.run(lambda: self.request("/mvp/recovery"), self.render_recovery)
+
+    def render_recovery(self, recovery):
+        self.recovery = recovery
+        if recovery["mode"] == "translation":
+            self.load()
+            return
+        self.clear()
+        key = "quickReturn" if recovery["mode"] == "quick_return" else "nextStep"
+        self.label(self.right, self.t(key), 20)
+        self.label(self.right, self.t(key + "Hint"), 13)
+        self.error = self.label(self.right, "", 12, "#a45d25")
+        if recovery["mode"] == "next_step":
+            self.label(self.right, self.t("nextStepPrompt"), 12)
+            self.next_step = tk.Text(self.right, height=4, width=20, font=("Segoe UI", 15),
+                                     wrap="word", relief="solid", borderwidth=1)
+            self.next_step.pack(fill="x", pady=10)
+            self.next_step.focus_set()
+            self.button(self.right, self.t("confirmAndReturn"), self.finish_recovery)
+        else:
+            self.button(self.right, self.t("returnToWork"), self.finish_recovery)
+
+    def finish_recovery(self):
+        step = ""
+        if self.recovery["mode"] == "next_step":
+            step = self.next_step.get("1.0", "end").strip()
+            if not step:
+                self.error.configure(text=self.t("nextStepRequired"))
+                return
+        self.run(lambda: self.request("/mvp/recovery/finish", {
+            "recovery_id": self.recovery["recovery_id"], "next_step": step,
+        }), lambda _: None)
+
     def load(self, next_sentence=False):
         self.clear()
         self.error = self.label(self.right, self.t("loading"))
@@ -161,7 +199,8 @@ class MvpBlockerView:
 
     def stop(self):
         def stop_current():
-            session_id = self.challenge["block_key"][0] if self.challenge else self.request("/session/status")["session_id"]
+            state = self.challenge or self.recovery
+            session_id = state["block_key"][0] if state else self.request("/session/status")["session_id"]
             return self.request("/mvp/stop", {"session_id": session_id})
         def worker():
             try:
@@ -175,14 +214,15 @@ class MvpBlockerView:
         threading.Thread(target=worker, daemon=True).start()
 
     def correction(self):
-        if not self.challenge:
+        state = self.challenge or self.recovery
+        if not state:
             return
         if hasattr(self, "answer") and self.answer.winfo_exists():
             self.translation_draft = self.answer.get("1.0", "end").strip()
         # Get server-owned history; never capture the blocker itself.
         def fetch():
             data = self.request("/mvp/overview")
-            record = next((r for r in data["recent"] if r.get("session_id") == self.challenge["block_key"][0]), None)
+            record = next((r for r in data["recent"] if r.get("session_id") == state["block_key"][0]), None)
             if not record:
                 raise RuntimeError(self.t("noRecords"))
             response = requests.get(self.url + "/personal-bench/recent-image", params={"path": record["screenshot_path"]}, timeout=10)
@@ -215,4 +255,4 @@ class MvpBlockerView:
             self.run(lambda: self.request("/mvp/feedback", {"record_id": record["id"], "label": selected_label, "reason": reason}),
                      lambda _: self.error.configure(text=self.t("feedbackSaved")))
         self.button(self.right, self.t("saveCase"), save)
-        self.button(self.right, self.t("cancel"), lambda: self.load(), secondary=True)
+        self.button(self.right, self.t("cancel"), self.load_recovery, secondary=True)

@@ -123,6 +123,7 @@ class SettingsRequest(BaseModel):
     guardian_rest_quota_per_day: Optional[int] = None
     practice_source_path: Optional[str] = None
     practice_target_language: Optional[str] = None
+    recovery_mode: Optional[str] = None
     post_block_cooldown_seconds: Optional[int] = None
     dataset_tag_options: Optional[List[str]] = None
     dataset_retention_days: Optional[int] = None

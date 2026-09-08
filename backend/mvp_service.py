@@ -23,6 +23,52 @@ def labels():
     return {key: text(key) for key in ("pending", "onTask", "offTask")}
 
 
+class RecoveryStore:
+    """Bind the selected recovery action to one active interruption."""
+    def __init__(self, manager):
+        self.manager = manager
+        self.current = None
+        self.lock = threading.RLock()
+
+    def block_key(self):
+        if not self.manager.active or not self.manager.should_block:
+            raise ValueError("No active interruption")
+        return (self.manager.session_id, self.manager.block_id)
+
+    def get(self):
+        with self.lock:
+            key = self.block_key()
+            if self.current and self.current["block_key"] == key:
+                return self.current.copy()
+            mode = load_settings().get("recovery_mode", "quick_return")
+            if mode not in {"quick_return", "next_step", "translation"}:
+                mode = "quick_return"
+            self.current = {
+                "recovery_id": uuid.uuid4().hex,
+                "block_key": key,
+                "mode": mode,
+            }
+            return self.current.copy()
+
+    def finish(self, recovery_id, next_step=""):
+        with self.lock:
+            recovery = self.get()
+            if recovery["recovery_id"] != recovery_id:
+                raise ValueError("This interruption has expired")
+            mode = recovery["mode"]
+            if mode == "translation":
+                raise ValueError("Complete the translation first")
+            step = (next_step or "").strip()
+            if mode == "next_step" and not step:
+                raise ValueError("Write the next action first")
+            self.manager.record_recovery_action(mode, step)
+            self.manager.acknowledge_block()
+            self.current = None
+
+
+recoveries = RecoveryStore(session_manager)
+
+
 class ChallengeStore:
     """Only the active block's server-issued sentence can be graded/unlocked."""
     def __init__(self, manager):
@@ -88,6 +134,7 @@ class ChallengeStore:
             challenge = self.require(challenge_id)
             if not challenge["accepted"] or challenge["skipped"]:
                 raise ValueError("Complete the translation first")
+            self.manager.record_recovery_action("translation")
             self.manager.acknowledge_block()
             self.current = None
 
@@ -183,6 +230,11 @@ class ChallengeRequest(BaseModel):
     answer: str = Field(default="", max_length=2000)
 
 
+class RecoveryRequest(BaseModel):
+    recovery_id: str
+    next_step: str = Field(default="", max_length=500)
+
+
 def call_challenge(fn, *args):
     try:
         return fn(*args)
@@ -192,13 +244,32 @@ def call_challenge(fn, *args):
         raise HTTPException(503, str(e)) from e
 
 
+@router.get("/recovery")
+def recovery():
+    return call_challenge(recoveries.get)
+
+
+@router.post("/recovery/finish")
+async def finish_recovery(req: RecoveryRequest):
+    # Keep completion serialized with session replacement on the event loop.
+    call_challenge(recoveries.finish, req.recovery_id, req.next_step)
+    return {"status": "acknowledged"}
+
+
+def require_translation_recovery():
+    if recoveries.get()["mode"] != "translation":
+        raise HTTPException(409, "Translation is not the selected recovery mode")
+
+
 @router.get("/challenge")
 def challenge():
+    require_translation_recovery()
     return call_challenge(challenges.get)
 
 
 @router.post("/challenge/next")
 def next_challenge(req: ChallengeRequest):
+    require_translation_recovery()
     with challenges.lock:
         call_challenge(challenges.require, req.challenge_id)
         return call_challenge(challenges.get, True)
@@ -206,16 +277,19 @@ def next_challenge(req: ChallengeRequest):
 
 @router.post("/challenge/grade")
 def grade(req: ChallengeRequest):
+    require_translation_recovery()
     return call_challenge(challenges.grade, req.challenge_id, req.answer)
 
 
 @router.post("/challenge/explain")
 def explain(req: ChallengeRequest):
+    require_translation_recovery()
     return call_challenge(challenges.grade, req.challenge_id, "", True)
 
 
 @router.post("/challenge/finish")
 async def finish(req: ChallengeRequest):
     # Run on the event loop so completion and starting a new session cannot interleave.
+    require_translation_recovery()
     call_challenge(challenges.finish, req.challenge_id)
     return {"status": "acknowledged"}

@@ -553,4 +553,4 @@ def evaluate_dispute(task: str, activity: str, original_reason: str, user_reason
 def _ui_output_language():
     from mvp_i18n import LANGUAGES
     from settings_manager import load_settings
-    return LANGUAGES.get(load_settings().get("ui_language"), "Chinese")
+    return LANGUAGES.get(load_settings().get("ui_language"), "English")

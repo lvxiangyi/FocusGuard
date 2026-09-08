@@ -2,7 +2,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import strings from '../../backend/ui_strings.json';
 import * as api from './api';
 const codes = Object.keys(strings.LANGS),
-  targets = ['Chinese', 'English', 'Japanese', 'Korean', 'French', 'Portuguese'];
+  targets = ['Chinese', 'English', 'Japanese', 'Korean', 'French', 'Portuguese'],
+  recoveryOptions = [['quick_return', 'quickReturn'], ['next_step', 'nextStep'], ['translation', 'translationPractice']];
 const clock = n => `${String(Math.floor(Math.max(0, n) / 60)).padStart(2, '0')}:${String(Math.max(0, n) % 60).padStart(2, '0')}`;
 export default function App() {
   const [view, setView] = useState('focus'),
@@ -24,7 +25,7 @@ export default function App() {
     requestId = useRef(0);
   const settings = data?.settings.settings,
     status = data?.status,
-    ui = settings?.ui_language || 'zh',
+    ui = settings?.ui_language || 'en',
     active = status?.active;
   const t = k => strings.copy[k]?.[codes.indexOf(ui)] || k;
   async function refresh() {
@@ -139,6 +140,7 @@ export default function App() {
             act(async () => {
               await api.saveSettings({
                 ui_language: draft.ui_language,
+                recovery_mode: draft.recovery_mode,
                 practice_target_language: draft.practice_target_language,
                 model: draft.model,
                 default_check_interval_seconds: Number(draft.default_check_interval_seconds),
@@ -147,7 +149,7 @@ export default function App() {
               dirty.current = false;
               setMessage(t('savedSettings'));
             });
-          }}><h2>{t('languages')}</h2><div className="setting-row"><div><label>{t('uiLanguage')}</label><p>{t('uiHint')}</p></div>{select(draft.ui_language, v => edit('ui_language', v))}</div><div className="setting-row"><div><label htmlFor="target">{t('answerLanguage')}</label><p>{t('answerHint')}</p></div><select id="target" value={draft.practice_target_language} onChange={e => edit('practice_target_language', e.target.value)}>{targets.map((v, i) => <option key={v} value={v}>{strings.LANGS[codes[i]]}</option>)}</select></div><details><summary>{t('advanced')}</summary><div className="setting-row"><label htmlFor="model">{t('model')}</label><select id="model" value={draft.model} onChange={e => edit('model', e.target.value)}>{data.settings.model_options?.map(m => <option key={m.id} value={m.id}>{m.id}</option>)}</select></div><div className="setting-row"><label htmlFor="interval">{t('interval')}</label><input id="interval" type="number" min="5" max="3600" required value={draft.default_check_interval_seconds} onChange={e => edit('default_check_interval_seconds', e.target.value)} /></div><div className="setting-row"><label htmlFor="threshold">{t('threshold')}</label><input id="threshold" type="number" min="1" max="20" required value={draft.trigger_threshold} onChange={e => edit('trigger_threshold', e.target.value)} /></div></details><button className="primary" disabled={busy || !connected}>{t('save')}</button></form></section>}
+          }}><h2>{t('recoveryMethod')}</h2><div className="setting-row"><div><label htmlFor="recovery">{t('recoveryMethod')}</label><p>{t('recoveryHint')}</p></div><select id="recovery" value={draft.recovery_mode || 'quick_return'} onChange={e => edit('recovery_mode', e.target.value)}>{recoveryOptions.map(([value, key]) => <option key={value} value={value}>{t(key)}</option>)}</select></div>{(draft.recovery_mode || 'quick_return') === 'translation' && <div className="setting-row"><div><label htmlFor="target">{t('answerLanguage')}</label><p>{t('answerHint')}</p></div><select id="target" value={draft.practice_target_language} onChange={e => edit('practice_target_language', e.target.value)}>{targets.map((v, i) => <option key={v} value={v}>{strings.LANGS[codes[i]]}</option>)}</select></div>}<h2>{t('languages')}</h2><div className="setting-row"><div><label>{t('uiLanguage')}</label><p>{t('uiHint')}</p></div>{select(draft.ui_language, v => edit('ui_language', v))}</div><details><summary>{t('advanced')}</summary><div className="setting-row"><label htmlFor="model">{t('model')}</label><select id="model" value={draft.model} onChange={e => edit('model', e.target.value)}>{data.settings.model_options?.map(m => <option key={m.id} value={m.id}>{m.id}</option>)}</select></div><div className="setting-row"><label htmlFor="interval">{t('interval')}</label><input id="interval" type="number" min="5" max="3600" required value={draft.default_check_interval_seconds} onChange={e => edit('default_check_interval_seconds', e.target.value)} /></div><div className="setting-row"><label htmlFor="threshold">{t('threshold')}</label><input id="threshold" type="number" min="1" max="20" required value={draft.trigger_threshold} onChange={e => edit('trigger_threshold', e.target.value)} /></div></details><button className="primary" disabled={busy || !connected}>{t('save')}</button></form></section>}
  </main><footer><span>FocusGuard</span><span>{t('footer')}</span></footer></div>
  <dialog ref={dialog} className="correction-dialog" onCancel={close} onClose={() => setItem(null)}><form onSubmit={e => {
         e.preventDefault();

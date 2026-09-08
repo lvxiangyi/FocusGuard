@@ -297,12 +297,12 @@
       "Faça uma pausa.\nVolte à sua tarefa."
     ],
     "blockIntro": [
-      "你似乎偏离了当前任务。完成一道小题，再继续。",
-      "You seem to have drifted from your task. Answer a short question to continue.",
-      "タスクから離れているようです。短い問題に答えて、再開しましょう。",
-      "현재 작업에서 벗어난 것 같아요. 간단한 문제를 풀고 계속하세요.",
-      "Vous semblez vous être éloigné de votre tâche. Répondez à une question pour reprendre.",
-      "Você parece ter se afastado da tarefa. Responda a uma pergunta para continuar."
+      "你似乎偏离了当前任务。用你选择的方式重新开始。",
+      "You seem to have drifted from your task. Reset in the way you chose.",
+      "タスクから離れているようです。選んだ方法で再開しましょう。",
+      "현재 작업에서 벗어난 것 같아요. 선택한 방식으로 다시 시작하세요.",
+      "Vous semblez vous être éloigné de votre tâche. Reprenez de la façon choisie.",
+      "Você parece ter se afastado da tarefa. Retome da forma escolhida."
     ],
     "yourTask": [
       "你的任务",
@@ -656,6 +656,94 @@
       "Langue cible",
       "Idioma de destino"
     ],
+    "recoveryMethod": [
+      "分心后的恢复方式",
+      "Recovery after distraction",
+      "脱線後の戻り方",
+      "집중 이탈 후 복귀 방식",
+      "Reprise après distraction",
+      "Retomada após distração"
+    ],
+    "recoveryHint": [
+      "选择拦截出现后，如何帮助你回到任务。",
+      "Choose how the interruption helps you return to the task.",
+      "中断後にタスクへ戻る方法を選びます。",
+      "차단 후 작업으로 돌아갈 방식을 선택하세요.",
+      "Choisissez comment l’interruption vous ramène à la tâche.",
+      "Escolha como a interrupção ajuda você a retomar a tarefa."
+    ],
+    "quickReturn": [
+      "快速返回任务（默认）",
+      "Quick return (default)",
+      "すぐタスクに戻る（既定）",
+      "빠르게 작업 복귀(기본)",
+      "Retour rapide (par défaut)",
+      "Retorno rápido (padrão)"
+    ],
+    "quickReturnHint": [
+      "一次确认后立即继续，阻力最小。",
+      "Continue after one confirmation, with minimal friction.",
+      "一度確認するだけで、すぐ再開できます。",
+      "한 번 확인하고 바로 계속합니다.",
+      "Reprenez après une confirmation, sans friction.",
+      "Continue após uma confirmação, com atrito mínimo."
+    ],
+    "nextStep": [
+      "写下下一步行动",
+      "Write the next action",
+      "次の行動を書く",
+      "다음 행동 작성",
+      "Écrire la prochaine action",
+      "Escrever a próxima ação"
+    ],
+    "nextStepHint": [
+      "先写一个具体、马上能做的小步骤，再继续。",
+      "Write one concrete action you can do now before continuing.",
+      "今すぐできる具体的な一歩を書いてから再開します。",
+      "지금 할 수 있는 구체적인 한 단계를 쓰고 계속합니다.",
+      "Écrivez une étape concrète à faire maintenant avant de reprendre.",
+      "Escreva uma etapa concreta para fazer agora antes de continuar."
+    ],
+    "translationPractice": [
+      "翻译练习",
+      "Translation practice",
+      "翻訳練習",
+      "번역 연습",
+      "Exercice de traduction",
+      "Prática de tradução"
+    ],
+    "translationPracticeHint": [
+      "通过一条 AI 判分的翻译练习后继续。",
+      "Continue after passing one AI-graded translation.",
+      "AI採点の翻訳問題に合格してから再開します。",
+      "AI가 채점하는 번역 문제를 통과한 뒤 계속합니다.",
+      "Reprenez après avoir réussi une traduction évaluée par l’IA.",
+      "Continue após passar em uma tradução avaliada por IA."
+    ],
+    "nextStepPrompt": [
+      "回到任务后，你马上要做什么？",
+      "What will you do first when you return?",
+      "戻ったら、まず何をしますか？",
+      "돌아가면 가장 먼저 무엇을 할 건가요?",
+      "Que ferez-vous en premier en reprenant ?",
+      "O que você fará primeiro ao retomar?"
+    ],
+    "nextStepRequired": [
+      "请先写下一个具体的下一步。",
+      "Write a concrete next action first.",
+      "具体的な次の行動を書いてください。",
+      "구체적인 다음 행동을 먼저 작성하세요.",
+      "Écrivez d’abord une prochaine action concrète.",
+      "Escreva primeiro uma próxima ação concreta."
+    ],
+    "confirmAndReturn": [
+      "确认并返回任务 →",
+      "Confirm and return →",
+      "確認してタスクに戻る →",
+      "확인하고 작업으로 복귀 →",
+      "Confirmer et reprendre →",
+      "Confirmar e retomar →"
+    ],
     "answerHint": [
       "把原句译成此语言；原句来自题库，与界面语言无关。",
       "Translate into this language. Source sentences come from the question bank, independently of the interface.",
@@ -809,12 +897,12 @@
       "Aguardando verificação"
     ],
     "blocked": [
-      "请完成翻译后继续",
-      "Complete the translation to continue",
-      "翻訳を終えて再開してください",
-      "번역을 완료하고 계속하세요",
-      "Terminez la traduction pour reprendre",
-      "Conclua a tradução para continuar"
+      "请完成恢复步骤后继续",
+      "Complete the recovery step to continue",
+      "復帰ステップを終えて再開してください",
+      "복귀 단계를 완료하고 계속하세요",
+      "Terminez l’étape de reprise pour continuer",
+      "Conclua a etapa de retomada para continuar"
     ],
     "savedSettings": [
       "设置已保存",

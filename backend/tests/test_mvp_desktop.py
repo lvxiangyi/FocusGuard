@@ -41,6 +41,9 @@ class NativeWidgetTests(unittest.TestCase):
                 with patch("mvp_blocker.load_settings", return_value={"ui_language": language}), patch.object(MvpBlockerView, "run"):
                     view = MvpBlockerView(host, "http://unused", "Task", "Activity", "Reason", (0, 0, 960, 680))
                     host._mvp_view = view
+                    view.render_recovery({"recovery_id": "quick", "block_key": ["session", "block"], "mode": "quick_return"})
+                    view.render_recovery({"recovery_id": "step", "block_key": ["session", "block"], "mode": "next_step"})
+                    view.next_step.insert("1.0", "Open the outline")
                     challenge = {"challenge_id": "one", "block_key": ["session", "block"], "source_text": "A clear plan makes deep work easier.", "target_language": LANGUAGES[language]}
                     view.render(challenge)
                     view.answer.insert("1.0", "a translation")
