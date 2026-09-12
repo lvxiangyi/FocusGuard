@@ -1,5 +1,7 @@
 # FocusGuard Agent
 
+Current release: **MVP 0.1.0**.
+
 Windows desktop app that watches the screen during a timed focus session, flags distraction, and helps you get back to the task. The interface defaults to **English**. You can switch it to Chinese, Japanese, Korean, French, or Portuguese in Preferences.
 
 The official UI has four pages: **Focus**, **Recent judgments**, **My examples**, and **Preferences**. Guardian, scheduler, and Flow stay in the codebase but do not start with the app.

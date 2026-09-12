@@ -40,6 +40,6 @@ cd ..\frontend
 npm run build
 ```
 
-当前通过 98 项后端测试，包括挑战状态、HTTP 案例完整链路、Session 生命周期与六种语言的 Tk 实际控件渲染。Tk 渲染测试在独立进程中使用隐藏窗口，避免测试框架的 HTTP 线程回收 Tcl 解释器。Electron 和 API JavaScript 语法检查、前端生产构建通过。
+当前通过 103 项后端测试，包括恢复/挑战状态、HTTP 案例完整链路、Session 生命周期与六种语言的 Tk 实际控件渲染。Tk 渲染测试在独立进程中使用隐藏窗口，避免测试框架的 HTTP 线程回收 Tcl 解释器。Electron 和 API JavaScript 语法检查、前端生产构建通过。
 
-未做付费在线模型实测或生成安装包。发布脚本已改为直接从 `run_backend.py` 冻结后端，并显式包含共用的 `ui_strings.json`，不再依赖仓库中不存在的本地 `.spec` 文件。
+MVP 0.1.0 便携 ZIP 已生成并检查，不包含 `.env`、本地想法或运行数据；NSIS 安装器因本机代理无法下载构建组件而未生成。未做付费在线模型实测。发布脚本从 `run_backend.py` 冻结后端，并显式包含共用的 `ui_strings.json`。

@@ -1,6 +1,6 @@
 {
   "name": "focusguard-agent",
-  "version": "1.1.0",
+  "version": "0.1.0",
   "description": "AI学習監督アシスタント",
   "main": "main.js",
   "scripts": {

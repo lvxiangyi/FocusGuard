@@ -195,7 +195,7 @@ data/personal_bench/
 | `setup_windows.bat` / `start_dev.bat` / `start_stable.bat` / `build_frontend.bat` | 安装 / dev(8000+3000) / prod 启动 / 前端构建 |
 | `package_release.ps1` | 发布打包：从 run_backend.py 冻结后端并显式打包 ui_strings.json + 前端 build + electron-builder，产物 `electron/release/FocusGuard-Agent-<version>-<date>-win-unpacked(.zip)` |
 | `.env` | API key（`OPENROUTER_API_KEY` / `DEEPSEEK_API_KEY` / `MINIMAX_API_KEY`），gitignore |
-| `.gitignore` | 忽略 `.env`、`data/`、`.venv/`、`node_modules/`、`dist/`、`release/`、`*.jpg`、`package-lock.json` 等 |
+| `.gitignore` | 忽略 `.env`、`data/`、`.venv/`、`node_modules/`、`dist/`、`release/`、`mythoughts/`、`*.jpg`、`package-lock.json` 等 |
 
 ## 5. 关键约定
 
@@ -221,3 +221,4 @@ data/personal_bench/
 
 - 2026-09-06 将 MVP demo 实装为正式四页桌面界面及六语系统翻译窗口，接入真实状态/截图/案例/AI 判分；停用后台 Guardian/日程/Flow，修复错误放行、过期答题与缓存、异步任务及案例并发问题；涉及 frontend/src/App.jsx、api.js、styles.css、electron/main.js、backend/main.py、session_manager.py、settings_manager.py、quiz_generator.py、vision_judge.py、blocker_window.py、mvp_service.py、mvp_blocker.py、mvp_i18n.py、ui_strings.json、personal_bench/recent.py、store.py、tests/test_mvp_service.py、test_mvp_desktop.py、test_quiz_generator.py、package_release.ps1、docs/MVP.md。
 - 2026-09-08 MVP 新增快速返回（默认）、填写下一步与翻译练习三种可持久化恢复方式，并以当前拦截身份校验放行；涉及 backend/settings_manager.py、main.py、mvp_service.py、mvp_blocker.py、ui_strings.json、tests/test_mvp_service.py、test_mvp_desktop.py、frontend/src/App.jsx、docs/MVP.md。
+- 2026-09-12 完成 MVP 0.1.0 便携包：统一前端与 Electron 版本，将本地 `mythoughts/` 排除出公开仓库并更新验证记录；涉及 electron/package.json、frontend/package.json、README.md、.gitignore、docs/MVP.md。
