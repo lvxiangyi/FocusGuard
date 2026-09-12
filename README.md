@@ -83,7 +83,16 @@ Local runtime data lives in `data/` (gitignored).
 
 ## Contributing
 
-Open an [issue](https://github.com/lvxiangyi/FocusGuard/issues) or a pull request.
+Open an [issue](https://github.com/lvxiangyi/FocusGuard/issues) or a pull request against `main`.
+
+### Branches
+
+| Branch | What it is |
+| --- | --- |
+| `main` | Current product. Session-focused MVP, docs, and API-key setup. Send pull requests here. |
+| `dev` | The previous default branch: the packaged 0.1.0 app, before this cut became `main`. |
+| `mvp-cut` | Old name for the current `main` line. Use `main` for new work. |
+| `dev/dataset-calibration` | Dataset and bench labeling. Not the desktop app default. |
 
 ## Questions and support
 
