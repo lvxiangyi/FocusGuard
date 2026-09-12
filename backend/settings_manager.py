@@ -50,6 +50,21 @@ MODEL_OPTIONS: List[Dict[str, str]] = [
         "label": "GPT-4o mini（OpenRouter）",
         "description": "经 OpenRouter 调用。适合文本题，看图更贵。",
     },
+    {
+        "id": "anthropic/claude-sonnet-4",
+        "label": "Claude Sonnet 4（OpenRouter）",
+        "description": "经 OpenRouter 调用。用已有 OPENROUTER_API_KEY 即可试 Claude。",
+    },
+    {
+        "id": "gpt-4o-mini",
+        "label": "GPT-4o mini（OpenAI 官方）",
+        "description": "直连 api.openai.com。需要 OPENAI_API_KEY。",
+    },
+    {
+        "id": "claude-sonnet-4-5",
+        "label": "Claude Sonnet 4.5（Anthropic 官方）",
+        "description": "直连 api.anthropic.com。需要 ANTHROPIC_API_KEY。",
+    },
 ]
 
 SUPERVISION_LEVEL_OPTIONS: List[Dict[str, str]] = [

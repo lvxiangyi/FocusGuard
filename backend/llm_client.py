@@ -35,6 +35,20 @@ PROVIDERS = {
         "extra_body": {"thinking": {"type": "disabled"}},
         "signup_url": "https://platform.minimaxi.com",
     },
+    "openai": {
+        "base_url": "https://api.openai.com/v1",
+        "env_keys": ("OPENAI_API_KEY",),
+        "label": "OpenAI",
+        "extra_body": None,
+        "signup_url": "https://platform.openai.com/api-keys",
+    },
+    "anthropic": {
+        "base_url": "https://api.anthropic.com/v1/",
+        "env_keys": ("ANTHROPIC_API_KEY", "CLAUDE_API_KEY"),
+        "label": "Anthropic",
+        "extra_body": None,
+        "signup_url": "https://console.anthropic.com/",
+    },
 }
 
 MODEL_PROVIDER = {
@@ -47,6 +61,12 @@ MODEL_PROVIDER = {
     "google/gemini-2.5-flash-lite": "openrouter",
     "openai/gpt-4o": "openrouter",
     "openai/gpt-4o-mini": "openrouter",
+    "anthropic/claude-3.5-sonnet": "openrouter",
+    "anthropic/claude-sonnet-4": "openrouter",
+    "gpt-4o-mini": "openai",
+    "gpt-4o": "openai",
+    "claude-sonnet-4-5": "anthropic",
+    "claude-3-5-sonnet-latest": "anthropic",
 }
 
 # Cheap hybrid-thinking models otherwise spend max_tokens on reasoning and

@@ -10,6 +10,7 @@
 
 - [About](#about)
 - [Installation & Usage](#installation--usage)
+- [API keys](#api-keys)
 - [Is this yet another site blocker?](#is-this-yet-another-site-blocker)
 - [About this repository](#about-this-repository)
 - [Contributing](#contributing)
@@ -30,17 +31,20 @@ A timed session captures the screen, a vision model judges it against the task y
 
 Downloads: [releases](https://github.com/lvxiangyi/FocusGuard/releases) (`mvp-app-v0.1.0`).
 
-From source:
+After you unpack the app, copy `.env.example` to `.env` next to the executable (or in the app data folder) and paste one key. Do not type the file from scratch. See [API keys](#api-keys).
+
+From source, put that same `.env` in the repo root, then:
 
 ```bat
 setup_windows.bat
-```
-
-Put an API key in `.env` at the repo root (`OPENROUTER_API_KEY=...`). Then:
-
-```bat
 start_stable.bat
 ```
+
+## API keys
+
+Step-by-step: [How to add an API key](docs/api-keys.md).
+
+Most bundled models use `OPENROUTER_API_KEY`. Official GPT uses `OPENAI_API_KEY`. Official Claude uses `ANTHROPIC_API_KEY`. You only need the line that matches the model in Preferences.
 
 ## Is this yet another site blocker?
 

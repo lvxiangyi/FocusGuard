@@ -90,7 +90,8 @@ foreach ($secretName in @(".env", "debug.log")) {
         Remove-Item -LiteralPath $secretPath -Force
     }
 }
-Set-Content -LiteralPath (Join-Path $TargetDir ".env.example") -Value "OPENROUTER_API_KEY=your_api_key_here`n" -Encoding ascii
+Copy-Item -LiteralPath (Join-Path $Root ".env.example") -Destination (Join-Path $TargetDir ".env.example")
+Copy-Item -LiteralPath (Join-Path $Root "docs\api-keys.md") -Destination (Join-Path $TargetDir "api-keys.md")
 Compress-Archive -Path $TargetDir -DestinationPath $ZipPath -Force
 
 Push-Location $ElectronDir

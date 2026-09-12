@@ -30,6 +30,11 @@ cd /d %~dp0electron
 call npm install
 if errorlevel 1 goto error
 
+if not exist "%~dp0.env" (
+  copy /Y "%~dp0.env.example" "%~dp0.env" >nul
+  echo Created .env from .env.example. Paste an API key before the first session.
+)
+
 echo Setup complete.
 echo Run start_stable.bat to start the app.
 echo To auto-start on Windows login, create a shortcut to start_stable.bat and place it in shell:startup.
