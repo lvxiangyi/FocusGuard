@@ -29,9 +29,9 @@ A timed session captures the screen, a vision model judges it against the task y
 
 ## Installation & Usage
 
-Downloads: [releases](https://github.com/lvxiangyi/FocusGuard/releases) (`mvp-app-v0.1.0`).
+Downloads: [FocusGuard-MVP-v0.1.0.zip](https://github.com/lvxiangyi/FocusGuard/releases/download/mvp-app-v0.1.0/FocusGuard-MVP-v0.1.0.zip) from the [v0.1.0 release](https://github.com/lvxiangyi/FocusGuard/releases/tag/mvp-app-v0.1.0). Use that zip, not GitHub's Source code archive.
 
-After you unpack the app, copy `.env.example` to `.env` next to the executable (or in the app data folder) and paste one key. Do not type the file from scratch. See [API keys](#api-keys).
+After you unpack it, copy `.env.example` to `.env` next to `FocusGuard Agent.exe` and paste one key. See [API keys](#api-keys).
 
 From source, put that same `.env` in the repo root, then:
 

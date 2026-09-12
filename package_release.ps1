@@ -14,6 +14,8 @@ $InstallerName = "FocusGuard-Agent-$Version-$Date-x64-setup.exe"
 $SourceDir = Join-Path $ReleaseDir "win-unpacked"
 $TargetDir = Join-Path $ReleaseDir $ArtifactName
 $ZipPath = Join-Path $ReleaseDir "$ArtifactName.zip"
+$StableZipName = "FocusGuard-MVP-v$Version.zip"
+$StableZipPath = Join-Path $ReleaseDir $StableZipName
 $InstallerPath = Join-Path $ReleaseDir $InstallerName
 $NsisSucceeded = $false
 
@@ -83,6 +85,11 @@ if (Test-Path $ZipPath) {
     Remove-Item -LiteralPath $ZipPath -Force
 }
 
+if (Test-Path $StableZipPath) {
+    Assert-UnderDirectory -Path $StableZipPath -Parent $ReleaseDir
+    Remove-Item -LiteralPath $StableZipPath -Force
+}
+
 Copy-Item -LiteralPath $SourceDir -Destination $TargetDir -Recurse
 foreach ($secretName in @(".env", "debug.log")) {
     $secretPath = Join-Path $TargetDir $secretName
@@ -93,6 +100,7 @@ foreach ($secretName in @(".env", "debug.log")) {
 Copy-Item -LiteralPath (Join-Path $Root ".env.example") -Destination (Join-Path $TargetDir ".env.example")
 Copy-Item -LiteralPath (Join-Path $Root "docs\api-keys.md") -Destination (Join-Path $TargetDir "api-keys.md")
 Compress-Archive -Path $TargetDir -DestinationPath $ZipPath -Force
+Copy-Item -LiteralPath $ZipPath -Destination $StableZipPath -Force
 
 Push-Location $ElectronDir
 try {
@@ -119,6 +127,7 @@ finally {
 Write-Host "Created:"
 Write-Host "  $TargetDir"
 Write-Host "  $ZipPath"
+Write-Host "  $StableZipPath"
 if ($NsisSucceeded) {
     Write-Host "  $InstallerPath"
 }
